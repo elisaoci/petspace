@@ -21,8 +21,12 @@ services:
       DATABASE_URL: postgresql+psycopg://petspace:petspace@db:5432/petspace
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+      UPLOAD_DIR: /app/uploads
     ports:
       - "8000:8000"
+    volumes:
+      # Фото питомцев и вложения: без volume файлы теряются при пересоздании контейнера.
+      - uploads_data:/app/uploads
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -43,4 +47,5 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:
 
