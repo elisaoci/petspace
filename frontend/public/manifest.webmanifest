@@ -1,0 +1,11 @@
+{
+  "name": "PetSpace",
+  "short_name": "PetSpace",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F3F1FA",
+  "theme_color": "#BDB1E3",
+  "lang": "ru",
+  "icons": []
+}
+
