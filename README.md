@@ -43,6 +43,9 @@ docker compose -p petspace down -v              # остановить и уда
 docker compose -p petspace exec backend alembic upgrade head   # вручную применить миграции
 ```
 
+Данные живут в именованных volumes: `postgres_data` (база) и `uploads_data` (фото питомцев и вложения,
+монтируется в `/app/uploads`). Обычный `down` их сохраняет, удаляет только `down -v`.
+
 ## ИИ-помощник: Ollama на хосте
 
 Ollama работает **на хосте, а не в контейнере** — модель крутится на вашем железе.
@@ -115,6 +118,35 @@ npm run dev        # http://localhost:5173
 `VITE_API_URL` по умолчанию `http://localhost:8000/api` (см. `src/lib/api.ts`) — для локального
 запуска менять ничего не нужно.
 
+## Тесты и линтер
+
+Backend проверяется на настоящем PostgreSQL, но в отдельной базе `petspace_test`:
+
+```bash
+docker compose -p petspace up -d db
+docker compose -p petspace exec -T db psql -U petspace -d postgres -c 'CREATE DATABASE petspace_test'
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+export TEST_DATABASE_URL=postgresql+psycopg://petspace:petspace@localhost:5433/petspace_test
+ruff check .
+pytest
+```
+
+Тесты покрывают CRUD питомцев, загрузку фото, вычисление `overdue`, публичную медкарту (в том числе
+что заметки владельца в неё не попадают и что перевыпуск токена ломает старую ссылку) и деградацию
+чата при недоступной модели. Frontend проверяется типами при сборке — `npm run build`.
+
+## CI
+
+`.github/workflows/ci.yml` запускается на каждый push в `main` и на pull request:
+
+- **backend** — `ruff check` и `pytest` с сервисным PostgreSQL;
+- **frontend** — `npm ci` и `npm run build`;
+- **docker** — сборка обоих образов, запуск frontend-контейнера и проверка, что `/`, `/app` и `/plus`
+  отвечают 200. Это регрессия на два уже исправленных бага: `vite: Permission denied`
+  (node_modules с macOS в образе) и конфликт `WORKDIR /app` с маршрутом SPA `/app`.
+
 ## Переменные окружения
 
 | Переменная | Назначение | Значение по умолчанию |
@@ -157,24 +189,30 @@ backend всегда ходит на `db:5432`.
 - SSE-чат с Ollama, персональным системным контекстом и очисткой истории;
 - локальная демонстрация уведомления на странице календаря (Web Notification API, нужно разрешение браузера);
 - демо-тарифы Plus: данные карт не отправляются и не сохраняются;
-- PWA manifest (`public/manifest.webmanifest`); файл `public/sw.js` создан, но регистрации
-  service worker в коде пока нет — офлайн-режим не работает.
+- PWA: manifest с иконками (генератор — `frontend/scripts/generate-icons.py`) и service worker,
+  который кэширует только оболочку приложения. Запросы к `/api/` и `/uploads/` не кэшируются никогда:
+  это персональные данные. Регистрация service worker включается только в production-сборке —
+  в dev-режиме он ломает горячую перезагрузку.
 
 ## Структура проекта
 
 ```
+.github/workflows/  CI: линтер, тесты, сборка и проверка контейнеров
 backend/
-  app/api/        роутеры: pets, events, chat, payments, health
-  app/models/     SQLAlchemy-модели (pets, calendar_events, chat_messages, subscriptions)
-  app/schemas/    Pydantic-схемы
-  app/services/   демо-платежи
-  app/seed.py     сидер демо-данных
-  alembic/        миграции
+  app/api/          роутеры: pets, events, chat, payments, health
+  app/models/       SQLAlchemy-модели (pets, calendar_events, chat_messages, subscriptions)
+  app/schemas/      Pydantic-схемы
+  app/services/     демо-платежи
+  app/seed.py       сидер демо-данных
+  alembic/          миграции
+  tests/            pytest: API, доступы, публичная медкарта, деградация чата
 frontend/
-  src/pages/      HomePage, DashboardPage, PetPage, CalendarPage, ChatPage, PlusPage, MedicalCardPage
-  src/components/ Layout, PetSwitcher, DogIllustration
-  src/context/    PetContext (активный питомец)
-  src/lib/        api.ts, types.ts, format.ts
+  public/           manifest, service worker, иконки PWA
+  scripts/          генератор иконок
+  src/pages/        HomePage, DashboardPage, PetPage, CalendarPage, ChatPage, PlusPage, MedicalCardPage
+  src/components/   Layout, PetSwitcher, DogIllustration
+  src/context/      PetContext (активный питомец)
+  src/lib/          api.ts, types.ts, format.ts, registerServiceWorker.ts
 ```
 
 ## Скриншоты
