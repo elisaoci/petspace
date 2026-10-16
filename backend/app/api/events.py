@@ -1,7 +1,9 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+
 from app.database import get_db
 from app.models import CalendarEvent, Pet
 from app.schemas.events import EventCreate, EventResponse, EventUpdate
@@ -10,7 +12,7 @@ router = APIRouter(prefix="/events", tags=["events"])
 
 def _response(event: CalendarEvent) -> EventResponse:
     computed = event.status
-    if event.status not in {"done", "cancelled"} and event.starts_at < datetime.now(timezone.utc):
+    if event.status not in {"done", "cancelled"} and event.starts_at < datetime.now(UTC):
         computed = "overdue"
     return EventResponse.model_validate({**{c.name: getattr(event, c.name) for c in CalendarEvent.__table__.columns}, "computed_status": computed})
 

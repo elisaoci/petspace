@@ -1,8 +1,11 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
+from secrets import token_urlsafe
+
 from sqlalchemy import select
+
 from app.database import SessionLocal
 from app.models import CalendarEvent, Pet
-from secrets import token_urlsafe
+
 
 def main() -> None:
     with SessionLocal() as db:
@@ -13,7 +16,7 @@ def main() -> None:
                       owner_notes="Аллергии: не выявлены\nЗаболевания: нет",
                       medical_secret_token=token_urlsafe(32))
             db.add(pet); db.flush()
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             db.add_all([
                 CalendarEvent(pet_id=pet.id, title="Вакцинация", event_type="vaccine", starts_at=now + timedelta(days=14)),
                 CalendarEvent(pet_id=pet.id, title="Прогулка", event_type="walk", starts_at=now + timedelta(hours=4)),

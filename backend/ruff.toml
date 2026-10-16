@@ -1,0 +1,18 @@
+line-length = 120
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = [
+    # B008: FastAPI использует Depends()/File() в значениях по умолчанию — это штатный паттерн.
+    "B008",
+    # Длину строк контролирует команда, см. line-length выше.
+    "E501",
+    # Текущий MVP пишет компактно («db.add(x); db.commit()»). Модули переписываются
+    # по мере перехода на /api/v1, тогда эти правила включаются.
+    "E701",
+    "E702",
+]
+
+[lint.per-file-ignores]
+"alembic/versions/*" = ["E501"]

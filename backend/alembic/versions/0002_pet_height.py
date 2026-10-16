@@ -3,8 +3,9 @@
 Revision ID: 0002_pet_height
 Revises: 0001_petspace_domain
 """
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "0002_pet_height"
 down_revision = "0001_petspace_domain"

@@ -1,5 +1,7 @@
 from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict
+
 
 class EventCreate(BaseModel):
     pet_id: int

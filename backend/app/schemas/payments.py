@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 class DemoPaymentRequest(BaseModel):
     owner_id: str
     plan: str = "premium"

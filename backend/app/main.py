@@ -1,13 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.api.pets import router as pets_router
-from app.api.events import router as events_router
-from app.api.chat import router as chat_router
-from app.api.payments import router as payments_router
-from app.config import get_settings
 
+from app.api.chat import router as chat_router
+from app.api.events import router as events_router
 from app.api.health import router as health_router
+from app.api.payments import router as payments_router
+from app.api.pets import router as pets_router
+from app.config import get_settings
 
 app = FastAPI(
     title="PetSpace API",
