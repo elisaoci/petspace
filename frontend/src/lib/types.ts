@@ -1,3 +1,18 @@
+export type User = {
+  id: number;
+  email?: string | null;
+  phone?: string | null;
+  role: string;
+  status: string;
+  consents_accepted: boolean;
+  created_at: string;
+};
+
+export type ConsentRequirement = {
+  kind: string;
+  version: string;
+};
+
 export type Pet = {
   id: number;
   name: string;

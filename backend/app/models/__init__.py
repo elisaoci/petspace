@@ -1,3 +1,36 @@
+from app.models.auth import (
+    CONSENT_PRIVACY,
+    CONSENT_TERMS,
+    CONSENT_VERSIONS,
+    REQUIRED_CONSENTS,
+    ROLE_OWNER,
+    ROLE_PLATFORM_ADMIN,
+    STATUS_ACTIVE,
+    STATUS_BLOCKED,
+    AuditLog,
+    Consent,
+    OtpCode,
+    RefreshToken,
+    User,
+)
 from app.models.entities import CalendarEvent, ChatMessage, Pet, Subscription
 
-__all__ = ["Pet", "CalendarEvent", "ChatMessage", "Subscription"]
+__all__ = [
+    "AuditLog",
+    "CONSENT_PRIVACY",
+    "CONSENT_TERMS",
+    "CONSENT_VERSIONS",
+    "REQUIRED_CONSENTS",
+    "ROLE_OWNER",
+    "ROLE_PLATFORM_ADMIN",
+    "STATUS_ACTIVE",
+    "STATUS_BLOCKED",
+    "CalendarEvent",
+    "ChatMessage",
+    "Consent",
+    "OtpCode",
+    "Pet",
+    "RefreshToken",
+    "Subscription",
+    "User",
+]

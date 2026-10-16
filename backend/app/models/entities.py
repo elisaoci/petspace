@@ -9,6 +9,9 @@ from app.database import Base
 class Pet(Base):
     __tablename__ = "pets"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Владелец питомца. NULL возможен только у данных, созданных до появления авторизации:
+    # такие питомцы не видны никому, пока сидер не привяжет их к демо-владельцу.
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     species: Mapped[str] = mapped_column(String(80), nullable=False, default="dog")
     breed: Mapped[str | None] = mapped_column(String(120))

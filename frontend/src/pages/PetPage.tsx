@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { DogIllustration } from "../components/DogIllustration";
 import { PetSwitcher } from "../components/PetSwitcher";
 import { usePets } from "../context/PetContext";
-import { API_URL, api, mediaUrl } from "../lib/api";
+import { api, authorizedFetch, mediaUrl } from "../lib/api";
 import { formatAge, notePart, speciesLabel } from "../lib/format";
 import type { Pet } from "../lib/types";
 
@@ -106,7 +106,7 @@ export function PetPage() {
                 setPhotoName(file.name);
                 const form = new FormData();
                 form.append("file", file);
-                const response = await fetch(`${API_URL}/pets/${pet.id}/photo`, { method: "POST", body: form });
+                const response = await authorizedFetch(`/pets/${pet.id}/photo`, { method: "POST", body: form });
                 if (response.ok) updatePet(await response.json());
               }}
             />

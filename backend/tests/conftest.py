@@ -1,10 +1,11 @@
-"""Общие фикстуры тестов: тестовая БД, клиент API.
+"""Общие фикстуры тестов: тестовая БД, клиент API, почтовый ящик и авторизованный владелец.
 
 Тесты работают с настоящим PostgreSQL (та же СУБД, что в проде), но с отдельной базой:
 по умолчанию `petspace_test`. Адрес переопределяется переменной `TEST_DATABASE_URL`.
 """
 
 import os
+import re
 from collections.abc import Generator
 
 import pytest
@@ -17,6 +18,7 @@ from app import models  # noqa: F401  — регистрирует таблиц�
 from app.config import get_settings
 from app.database import Base, get_db
 from app.main import app
+from tests.helpers import DEFAULT_EMAIL, login
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
@@ -25,6 +27,24 @@ TEST_DATABASE_URL = os.getenv(
 
 engine = create_engine(TEST_DATABASE_URL, pool_pre_ping=True)
 TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+
+class FakeEmailSender:
+    """Подменяет отправку писем: код входа виден тесту."""
+
+    def __init__(self) -> None:
+        self.messages: list[dict[str, str]] = []
+
+    def send(self, to: str, subject: str, text: str) -> None:
+        self.messages.append({"to": to, "subject": subject, "text": text})
+
+    def last_code(self) -> str:
+        match = re.search(r"\b(\d{6})\b", self.messages[-1]["text"])
+        assert match, "в письме нет кода входа"
+        return match.group(1)
+
+    def last_recipient(self) -> str:
+        return self.messages[-1]["to"]
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -50,22 +70,47 @@ def db() -> Generator[Session, None, None]:
 
 
 @pytest.fixture()
-def client(db: Session, tmp_path, monkeypatch) -> Generator[TestClient, None, None]:
-    def override_get_db() -> Generator[Session, None, None]:
-        yield db
+def mailbox(monkeypatch) -> FakeEmailSender:
+    sender = FakeEmailSender()
+    # Роутер авторизации берёт отправителя через get_email_sender.
+    monkeypatch.setattr("app.api.auth.get_email_sender", lambda: sender)
+    return sender
 
-    app.dependency_overrides[get_db] = override_get_db
-    # Загрузки пишем во временную папку, а не в backend/uploads.
-    monkeypatch.setattr(get_settings(), "upload_dir", str(tmp_path / "uploads"))
-    with TestClient(app) as test_client:
-        yield test_client
+
+@pytest.fixture()
+def client_factory(db: Session, tmp_path, monkeypatch):
+    """Создаёт клиентов API: одному тесту часто нужно два разных пользователя."""
+    def make(authorization: str | None = None) -> TestClient:
+        def override_get_db() -> Generator[Session, None, None]:
+            yield db
+
+        app.dependency_overrides[get_db] = override_get_db
+        # Загрузки пишем во временную папку, а не в backend/uploads.
+        monkeypatch.setattr(get_settings(), "upload_dir", str(tmp_path / "uploads"))
+        test_client = TestClient(app)
+        if authorization:
+            test_client.headers["Authorization"] = authorization
+        return test_client
+
+    yield make
     app.dependency_overrides.clear()
 
 
 @pytest.fixture()
-def pet(client: TestClient) -> dict:
+def client(client_factory) -> TestClient:
+    return client_factory()
+
+
+@pytest.fixture()
+def owner(client: TestClient, mailbox: FakeEmailSender) -> dict:
+    """Владелец, вошедший по коду. Заголовок Authorization остаётся на клиенте."""
+    return login(client, DEFAULT_EMAIL)
+
+
+@pytest.fixture()
+def pet(client: TestClient, owner: dict) -> dict:
     response = client.post(
-        "/api/pets",
+        "/api/v1/pets",
         json={
             "name": "Макс",
             "species": "dog",

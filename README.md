@@ -3,11 +3,13 @@
 Сайт для профиля питомца, календаря здоровья, локального ИИ-помощника и демо-подписки PetSpace Plus.
 
 - Frontend: React 18 + TypeScript, Vite 5, React Router 6, Tailwind CSS — порт **5173**
-- Backend: FastAPI + SQLAlchemy 2.0 + Alembic — порт **8000**, Swagger на `/docs`
+- Backend: FastAPI + SQLAlchemy 2.0 + Alembic — порт **8000**, API на `/api/v1`, Swagger на `/docs`
 - БД: PostgreSQL 16 — внутри compose `db:5432`, на хост публикуется как **5433** (`POSTGRES_PORT`)
+- Авторизация: вход по одноразовому коду на email, JWT access + refresh с ротацией
 - ИИ: Ollama на хосте (по умолчанию модель `qwen2.5:3b`), ответы стримятся по SSE
 
-Страницы: `/` главная, `/app` кабинет, `/app/pet`, `/app/calendar`, `/app/chat`, `/plus`, `/medical/:token`.
+Страницы: `/` главная, `/login` вход, `/app` кабинет, `/app/pet`, `/app/calendar`, `/app/chat`,
+`/plus`, `/medical/:token`.
 
 ## Быстрый старт (Docker Compose)
 
@@ -17,13 +19,16 @@ docker compose -p petspace up -d --build
 docker compose -p petspace exec backend python -m app.seed
 ```
 
-Откройте http://localhost:5173 (Swagger — http://localhost:8000/docs).
+Откройте http://localhost:5173 (Swagger — http://localhost:8000/docs), нажмите «Войти» и введите
+email демо-владельца `demo@petspace.local`. Код входа вернётся прямо в ответе API и попадёт в логи
+backend — почтовый провайдер пока не подключён (см. «Авторизация»).
 
 Флаг `-d` обязателен, если вы не хотите держать терминал занятым: без него `Ctrl+C` останавливает контейнеры.
 
 Миграции Alembic применяются автоматически: в `docker-compose.yml` backend запускается командой
 `alembic upgrade head && uvicorn app.main:app ...` и ждёт healthcheck базы. Сидер (`app.seed`) создаёт
-питомца «Макс» с двумя событиями календаря — без него кабинет будет пустым.
+владельца, его согласия и питомца «Макс» с двумя событиями календаря, а также привязывает к владельцу
+питомцев, созданных до появления авторизации.
 
 Проверка, что всё живо:
 
@@ -134,8 +139,11 @@ pytest
 ```
 
 Тесты покрывают CRUD питомцев, загрузку фото, вычисление `overdue`, публичную медкарту (в том числе
-что заметки владельца в неё не попадают и что перевыпуск токена ломает старую ссылку) и деградацию
-чата при недоступной модели. Frontend проверяется типами при сборке — `npm run build`.
+что заметки владельца в неё не попадают и что перевыпуск токена ломает старую ссылку), деградацию
+чата при недоступной модели, а также авторизацию целиком: вход по коду, лимиты попыток, ротацию
+refresh-токенов, обнаружение повторного использования токена, требование согласий и изоляцию
+владельцев (чужой питомец, его события и чат недоступны). Frontend проверяется типами при сборке —
+`npm run build`.
 
 ## CI
 
@@ -147,15 +155,64 @@ pytest
   отвечают 200. Это регрессия на два уже исправленных бага: `vite: Permission denied`
   (node_modules с macOS в образе) и конфликт `WORKDIR /app` с маршрутом SPA `/app`.
 
+## Авторизация
+
+Владелец входит по одноразовому коду на email — пароля нет.
+
+1. `POST /api/v1/auth/otp/request` с `{"email": "..."}` отправляет код (6 цифр, живёт 5 минут,
+   не больше 3 запросов в час на адрес).
+2. `POST /api/v1/auth/otp/verify` с `{"email", "code", "consents"}` возвращает пару токенов.
+   Первый вход одновременно регистрирует пользователя, поэтому согласия обязательны:
+   `[{"kind": "terms", "version": "..."}, {"kind": "privacy", "version": "..."}]`.
+   Актуальные версии отдаёт `GET /api/v1/auth/consents/required` — фронтенд не дублирует их у себя.
+3. Дальше access-токен идёт в заголовке `Authorization: Bearer <token>`.
+
+Особенности реализации:
+
+- **Почты пока нет.** Провайдер не подключён, поэтому письмо печатается в лог backend
+  (`docker compose -p petspace logs -f backend`), а вне `ENVIRONMENT=prod` код дополнительно
+  возвращается полем `dev_code` в ответе на запрос кода. В prod этого поля не будет.
+- **Токены.** Access живёт 15 минут, refresh — 30 дней и одноразовый. Каждый `/auth/refresh` гасит
+  старый токен и выдаёт новый; повторное использование старого токена считается кражей и отзывает
+  все сессии пользователя (событие `auth.refresh.reuse_detected` в журнале).
+- **Хранение.** В БД лежат только хэши: refresh-токены — SHA-256, коды входа — HMAC-SHA256 с
+  секретом приложения (6 цифр слишком легко перебрать по простому хэшу).
+- **Согласия** хранятся с датой и версией текста. Создание питомца требует актуальных согласий,
+  иначе `403` с `consent_required`.
+- **Доступ к данным.** Любой запрос без токена — `401`. Чужой питомец, его события и история чата
+  возвращают `404` (а не `403`), чтобы нельзя было выяснить существование чужой карточки.
+- **Аудит.** В `audit_logs` попадают входы, неудачные попытки, ротация и кража токенов, обращения к
+  публичной медкарте, удаление питомца и перевыпуск ссылки медкарты.
+
+Пример входа через curl:
+
+```bash
+API=http://localhost:8000/api/v1
+CODE=$(curl -s -X POST $API/auth/otp/request -H 'Content-Type: application/json' \
+  -d '{"email":"demo@petspace.local"}' | python3 -c "import json,sys; print(json.load(sys.stdin)['dev_code'])")
+ACCESS=$(curl -s -X POST $API/auth/otp/verify -H 'Content-Type: application/json' \
+  -d "{\"email\":\"demo@petspace.local\",\"code\":\"$CODE\"}" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
+curl -s -H "Authorization: Bearer $ACCESS" $API/pets
+```
+
 ## Переменные окружения
 
 | Переменная | Назначение | Значение по умолчанию |
 | --- | --- | --- |
 | `DATABASE_URL` | строка подключения SQLAlchemy | `postgresql+psycopg://petspace:petspace@localhost:5432/petspace` |
 | `POSTGRES_PORT` | порт Postgres **на хосте** (внутри compose всегда `db:5432`) | `5432`, в `.env.example` — `5433` |
+| `ENVIRONMENT` | `dev`, `staging` или `prod`; в prod запрещены небезопасные значения по умолчанию | `dev` |
+| `JWT_SECRET` | секрет для подписи токенов и HMAC кодов; в prod обязателен и не короче 32 символов | `dev-insecure-change-me` |
+| `ACCESS_TOKEN_TTL_MINUTES` | срок жизни access-токена | `15` |
+| `REFRESH_TOKEN_TTL_DAYS` | срок жизни refresh-токена | `30` |
+| `OTP_TTL_MINUTES` | срок жизни кода входа | `5` |
+| `OTP_MAX_ATTEMPTS` | попыток ввода одного кода | `5` |
+| `OTP_MAX_REQUESTS_PER_HOUR` | запросов кода на адрес в час | `3` |
+| `EMAIL_SENDER` | способ отправки писем; `console` пишет в лог | `console` |
 | `OLLAMA_BASE_URL` | адрес Ollama | `http://localhost:11434` |
 | `OLLAMA_MODEL` | модель для чата | `qwen2.5:3b` |
-| `VITE_API_URL` | база API для фронтенда | `http://localhost:8000/api` |
+| `VITE_API_URL` | база API для фронтенда | `http://localhost:8000/api/v1` |
 | `UPLOAD_DIR` | папка загруженных фото | `uploads` |
 
 Почему на хосте `5433`: на 5432 часто уже слушает локальный Postgres/Postgres.app, и тогда
@@ -167,23 +224,33 @@ backend всегда ходит на `db:5432`.
 
 | Метод | Путь | Что делает |
 | --- | --- | --- |
-| GET | `/api/health` | статус сервиса, БД и имя модели |
-| GET/POST | `/api/pets` | список и создание питомцев |
-| GET/PATCH/DELETE | `/api/pets/{id}` | карточка питомца |
-| POST | `/api/pets/{id}/photo` | загрузка фото (jpg, jpeg, png, webp) |
-| POST | `/api/pets/{id}/medical-token` | перевыпуск секретной ссылки медкарты |
-| GET | `/api/pets/public/medical-card/{token}` | публичная медкарта без заметок владельца |
-| GET/POST | `/api/events` | календарь (фильтр `?pet_id=`), у каждого события есть `computed_status` |
-| GET/PATCH/DELETE | `/api/events/{id}` | редактирование события |
-| POST | `/api/chat/stream` | SSE-поток ответа Ollama с контекстом питомца |
-| GET/DELETE | `/api/chat/history/{conversation_id}` | история и очистка диалога |
-| POST | `/api/payments/demo` | заглушка демо-оплаты: карта не обрабатывается и не сохраняется |
+| GET | `/api/health`, `/api/v1/health` | статус сервиса, БД и имя модели (без авторизации) |
+| POST | `/api/v1/auth/otp/request` | отправка кода входа на email |
+| POST | `/api/v1/auth/otp/verify` | проверка кода: регистрация, согласия, пара токенов |
+| POST | `/api/v1/auth/refresh` | ротация refresh-токена |
+| POST | `/api/v1/auth/logout` | отзыв refresh-токена |
+| GET | `/api/v1/auth/me` | текущий пользователь и статус согласий |
+| GET | `/api/v1/auth/consents/required` | актуальные версии текстов согласий |
+| POST | `/api/v1/auth/consents` | принять согласия отдельным запросом |
+| GET/POST | `/api/v1/pets` | список (только свои) и создание питомцев |
+| GET/PATCH/DELETE | `/api/v1/pets/{id}` | карточка питомца |
+| POST | `/api/v1/pets/{id}/photo` | загрузка фото (jpg, jpeg, png, webp) |
+| POST | `/api/v1/pets/{id}/medical-token` | перевыпуск секретной ссылки медкарты |
+| GET | `/api/v1/pets/public/medical-card/{token}` | публичная медкарта без заметок владельца (без авторизации) |
+| GET/POST | `/api/v1/events` | календарь (фильтр `?pet_id=`), у каждого события есть `computed_status` |
+| GET/PATCH/DELETE | `/api/v1/events/{id}` | редактирование события |
+| POST | `/api/v1/chat/stream` | SSE-поток ответа Ollama с контекстом питомца |
+| GET/DELETE | `/api/v1/chat/history/{conversation_id}` | история и очистка диалога |
+| POST | `/api/v1/payments/demo` | заглушка демо-оплаты: карта не обрабатывается и не сохраняется |
+
+Всё, кроме `health` и публичной медкарты, требует заголовок `Authorization: Bearer <access_token>`.
 
 Статус `overdue` не хранится в БД, а вычисляется на лету: событие просрочено, если его `starts_at`
 в прошлом и статус не `done`/`cancelled` (`app/api/events.py`).
 
 ## Возможности MVP
 
+- вход владельца по одноразовому коду, согласия с версиями текста и журнал доступа к данным;
 - профиль и несколько питомцев, фото, случайная публичная ссылка медкарты;
 - календарь прививок и обработок с вычисляемым статусом `overdue`;
 - SSE-чат с Ollama, персональным системным контекстом и очисткой истории;
@@ -199,20 +266,20 @@ backend всегда ходит на `db:5432`.
 ```
 .github/workflows/  CI: линтер, тесты, сборка и проверка контейнеров
 backend/
-  app/api/          роутеры: pets, events, chat, payments, health
-  app/models/       SQLAlchemy-модели (pets, calendar_events, chat_messages, subscriptions)
+  app/api/          роутеры: auth, pets, events, chat, payments, health; deps.py — доступ и роли
+  app/models/       модели: entities.py (питомцы, календарь, чат), auth.py (пользователи, OTP, токены, согласия, аудит)
   app/schemas/      Pydantic-схемы
-  app/services/     демо-платежи
+  app/services/     security (JWT/OTP), sessions (ротация токенов), consents, email, audit, демо-платежи
   app/seed.py       сидер демо-данных
   alembic/          миграции
-  tests/            pytest: API, доступы, публичная медкарта, деградация чата
+  tests/            pytest: API, авторизация, изоляция владельцев, публичная медкарта, чат
 frontend/
   public/           manifest, service worker, иконки PWA
   scripts/          генератор иконок
-  src/pages/        HomePage, DashboardPage, PetPage, CalendarPage, ChatPage, PlusPage, MedicalCardPage
-  src/components/   Layout, PetSwitcher, DogIllustration
-  src/context/      PetContext (активный питомец)
-  src/lib/          api.ts, types.ts, format.ts, registerServiceWorker.ts
+  src/pages/        HomePage, LoginPage, DashboardPage, PetPage, CalendarPage, ChatPage, PlusPage, MedicalCardPage
+  src/components/   Layout, PetSwitcher, DogIllustration, RequireAuth
+  src/context/      AuthContext (сессия), PetContext (активный питомец)
+  src/lib/          api.ts (токены и автообновление), types.ts, format.ts, registerServiceWorker.ts
 ```
 
 ## Скриншоты
@@ -236,6 +303,13 @@ docker compose -p petspace up -d --build frontend
 
 **В кабинете нет питомцев.** Не выполнен сидер:
 `docker compose -p petspace exec backend python -m app.seed`.
+
+**Кабинет просит войти или API отвечает 401.** Это ожидаемо: без токена доступ закрыт. Войдите на
+`/login` по email демо-владельца `demo@petspace.local`; код смотрите в ответе или в логах backend
+(`docker compose -p petspace logs -f backend`).
+
+**Код входа не приходит на почту.** Почтовый провайдер ещё не подключён: `EMAIL_SENDER=console`
+печатает письмо в лог backend, а вне `ENVIRONMENT=prod` код возвращается полем `dev_code`.
 
 **Чат отвечает ошибкой или молчит.** Проверьте `ollama pull qwen2.5:3b`,
 `curl http://localhost:11434/api/tags` и `brew services list` (там `ollama` должен быть `started`);

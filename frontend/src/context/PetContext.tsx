@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import type { CalendarEvent, Pet } from "../lib/types";
+import { useAuth } from "./AuthContext";
 
 type PetContextValue = {
   pets: Pet[];
@@ -16,6 +17,7 @@ type PetContextValue = {
 const PetContext = createContext<PetContextValue | null>(null);
 
 export function PetProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [pets, setPets] = useState<Pet[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [selectedPetId, setSelectedPetId] = useState<number | null>(null);
@@ -40,8 +42,15 @@ export function PetProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    // Данные грузим только после входа, а при выходе очищаем: чужой сессии здесь быть не должно.
+    if (!user) {
+      setPets([]);
+      setEvents([]);
+      setSelectedPetId(null);
+      return;
+    }
     reloadPets().catch(() => undefined);
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     reloadEvents().catch(() => undefined);

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Send, Trash2 } from "lucide-react";
 import { PetSwitcher } from "../components/PetSwitcher";
 import { usePets } from "../context/PetContext";
-import { API_URL, api } from "../lib/api";
+import { api, authorizedFetch } from "../lib/api";
 import type { ChatHistoryItem } from "../lib/types";
 
 type ChatMessage = { role: "user" | "assistant"; text: string };
@@ -48,7 +48,7 @@ export function ChatPage() {
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const response = await fetch(`${API_URL}/chat/stream`, {
+      const response = await authorizedFetch("/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
         body: JSON.stringify({ message: text, conversation_id: `pet-${pet.id}`, pet_id: pet.id }),
@@ -101,7 +101,7 @@ export function ChatPage() {
     setError(null);
     setMessages([{ role: "assistant", text: `История очищена. Чем помочь ${pet.name}?` }]);
     try {
-      await fetch(`${API_URL}/chat/history/pet-${pet.id}`, { method: "DELETE" });
+      await authorizedFetch(`/chat/history/pet-${pet.id}`, { method: "DELETE" });
     } catch {
       setError("История очищена только на экране. Backend недоступен.");
     }

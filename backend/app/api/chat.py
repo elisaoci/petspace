@@ -2,45 +2,68 @@ import json
 from collections.abc import AsyncIterator
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
 
+from app.api.deps import CurrentUser, DbSession, get_owned_pet
 from app.config import get_settings
-from app.database import get_db
 from app.models import ChatMessage, Pet
 from app.schemas.chat import ChatRequest
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
+# Сколько последних сообщений диалога уходит в модель: ограничиваем окно контекста.
+HISTORY_LIMIT = 20
+
+
+def _user_pet_ids(user: CurrentUser, db: DbSession):
+    return select(Pet.id).where(Pet.owner_id == user.id)
+
+
 @router.get("/history/{conversation_id}")
-def get_history(conversation_id: str, db: Session = Depends(get_db)):
+def get_history(conversation_id: str, user: CurrentUser, db: DbSession):
+    """История диалога доступна только по питомцам текущего владельца."""
     messages = db.scalars(
         select(ChatMessage)
-        .where(ChatMessage.conversation_id == conversation_id)
+        .join(Pet, Pet.id == ChatMessage.pet_id)
+        .where(ChatMessage.conversation_id == conversation_id, Pet.owner_id == user.id)
         .order_by(ChatMessage.id)
     ).all()
     return [{"id": message.id, "role": message.role, "content": message.content, "created_at": message.created_at} for message in messages]
 
+
 @router.delete("/history/{conversation_id}", status_code=204)
-def clear_history(conversation_id: str, db: Session = Depends(get_db)):
-    db.execute(delete(ChatMessage).where(ChatMessage.conversation_id == conversation_id))
+def clear_history(conversation_id: str, user: CurrentUser, db: DbSession):
+    db.execute(
+        delete(ChatMessage).where(
+            ChatMessage.conversation_id == conversation_id,
+            ChatMessage.pet_id.in_(_user_pet_ids(user, db)),
+        )
+    )
     db.commit()
 
+
 @router.post("/stream")
-async def stream_chat(payload: ChatRequest, db: Session = Depends(get_db)):
-    history = db.scalars(select(ChatMessage).where(ChatMessage.conversation_id == payload.conversation_id).order_by(ChatMessage.id)).all()
-    db.add(ChatMessage(pet_id=payload.pet_id, conversation_id=payload.conversation_id, role="user", content=payload.message))
+async def stream_chat(payload: ChatRequest, user: CurrentUser, db: DbSession):
+    pet = get_owned_pet(payload.pet_id, user, db)
+
+    history = db.scalars(
+        select(ChatMessage)
+        .where(ChatMessage.conversation_id == payload.conversation_id, ChatMessage.pet_id == pet.id)
+        .order_by(ChatMessage.id.desc())
+        .limit(HISTORY_LIMIT)
+    ).all()
+    history = list(reversed(history))
+
+    db.add(ChatMessage(pet_id=pet.id, conversation_id=payload.conversation_id, role="user", content=payload.message))
     db.commit()
-    pet = db.get(Pet, payload.pet_id) if payload.pet_id is not None else None
-    pet_context = "Данные питомца не переданы."
-    if pet:
-        pet_context = (
-            f"Имя: {pet.name}; вид: {pet.species}; порода: {pet.breed or 'не указана'}; "
-            f"рост: {pet.height_cm or 'не указан'} см; вес: {pet.weight_kg or 'не указан'} кг; "
-            f"заметки владельца: {pet.owner_notes or 'нет'}."
-        )
+
+    pet_context = (
+        f"Имя: {pet.name}; вид: {pet.species}; порода: {pet.breed or 'не указана'}; "
+        f"рост: {pet.height_cm or 'не указан'} см; вес: {pet.weight_kg or 'не указан'} кг; "
+        f"заметки владельца: {pet.owner_notes or 'нет'}."
+    )
     system_prompt = (
         "Ты — осторожный ИИ-ассистент PetSpace. Отвечай по-русски, кратко и по делу, "
         "по уходу, кормлению, поведению и симптомам питомца. Учитывай контекст питомца ниже. "
@@ -74,7 +97,7 @@ async def stream_chat(payload: ChatRequest, db: Session = Depends(get_db)):
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
         finally:
             if answer:
-                db.add(ChatMessage(pet_id=payload.pet_id, conversation_id=payload.conversation_id, role="assistant", content="".join(answer)))
+                db.add(ChatMessage(pet_id=pet.id, conversation_id=payload.conversation_id, role="assistant", content="".join(answer)))
                 db.commit()
             yield "data: [DONE]\n\n"
     return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

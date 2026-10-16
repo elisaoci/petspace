@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Heart, Menu, X } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 
 const links = [
   { to: "/", label: "Главная", end: true },
@@ -13,6 +14,14 @@ const links = [
 
 export function Layout() {
   const [open, setOpen] = useState(false);
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    setOpen(false);
+    await logout();
+    navigate("/", { replace: true });
+  };
 
   return (
     <div className="app-shell site-shell">
@@ -35,7 +44,14 @@ export function Layout() {
             ))}
           </nav>
           <div className="topbar-actions">
-            <NavLink className="button primary header-cta" to="/app">Открыть кабинет</NavLink>
+            {user ? (
+              <div className="topbar-user">
+                <span className="user-email" title={user.email ?? ""}>{user.email}</span>
+                <button className="logout-button" type="button" onClick={handleLogout}>Выйти</button>
+              </div>
+            ) : (
+              <NavLink className="button primary header-cta" to="/login">Войти</NavLink>
+            )}
             <button className="menu-toggle" type="button" aria-label={open ? "Закрыть меню" : "Открыть меню"} onClick={() => setOpen(value => !value)}>
               {open ? <X size={20} /> : <Menu size={20} />}
             </button>
@@ -48,7 +64,9 @@ export function Layout() {
                 {link.label}
               </NavLink>
             ))}
-            <NavLink className="button primary full-button" to="/app" onClick={() => setOpen(false)}>Открыть кабинет</NavLink>
+            <NavLink className="button primary full-button" to={user ? "/app" : "/login"} onClick={() => setOpen(false)}>
+              {user ? "Открыть кабинет" : "Войти"}
+            </NavLink>
           </nav>
         )}
       </header>
