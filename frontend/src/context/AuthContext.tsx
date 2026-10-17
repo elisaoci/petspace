@@ -13,10 +13,12 @@ import type { ConsentRequirement, User } from "../lib/types";
 type AuthContextValue = {
   user: User | null;
   loading: boolean;
-  requestCode: (email: string) => Promise<{ expires_in: number; dev_code?: string | null }>;
-  verifyCode: (email: string, code: string, consents: ConsentRequirement[]) => Promise<void>;
-  logout: () => Promise<void>;
   consentRequirements: ConsentRequirement[];
+  register: (email: string, password: string, consents: ConsentRequirement[]) => Promise<void>;
+  loginWithPassword: (email: string, password: string) => Promise<void>;
+  requestCode: (email: string) => Promise<{ expires_in: number; dev_code?: string | null }>;
+  verifyCode: (email: string, code: string) => Promise<void>;
+  logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -60,6 +62,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const storeSession = useCallback((tokens: TokenPair & { user: User }) => {
+    setTokens(tokens);
+    setUser(tokens.user);
+  }, []);
+
+  const register = useCallback(
+    async (email: string, password: string, consents: ConsentRequirement[]) => {
+      const tokens = await api<TokenPair & { user: User }>("/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, consents }),
+      });
+      storeSession(tokens);
+    },
+    [storeSession],
+  );
+
+  const loginWithPassword = useCallback(
+    async (email: string, password: string) => {
+      const tokens = await api<TokenPair & { user: User }>("/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      storeSession(tokens);
+    },
+    [storeSession],
+  );
+
   const requestCode = useCallback(async (email: string) => {
     return api<{ expires_in: number; dev_code?: string | null; message: string }>("/auth/otp/request", {
       method: "POST",
@@ -68,15 +99,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const verifyCode = useCallback(async (email: string, code: string, consents: ConsentRequirement[]) => {
-    const tokens = await api<TokenPair & { user: User }>("/auth/otp/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, code, consents }),
-    });
-    setTokens(tokens);
-    setUser(tokens.user);
-  }, []);
+  const verifyCode = useCallback(
+    async (email: string, code: string) => {
+      const tokens = await api<TokenPair & { user: User }>("/auth/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code }),
+      });
+      storeSession(tokens);
+    },
+    [storeSession],
+  );
 
   const logout = useCallback(async () => {
     const refreshToken = getRefreshToken();
@@ -92,8 +125,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, requestCode, verifyCode, logout, consentRequirements }),
-    [user, loading, requestCode, verifyCode, logout, consentRequirements],
+    () => ({ user, loading, consentRequirements, register, loginWithPassword, requestCode, verifyCode, logout }),
+    [user, loading, consentRequirements, register, loginWithPassword, requestCode, verifyCode, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

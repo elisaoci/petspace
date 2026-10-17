@@ -18,7 +18,7 @@ from app import models  # noqa: F401  — регистрирует таблиц�
 from app.config import get_settings
 from app.database import Base, get_db
 from app.main import app
-from tests.helpers import DEFAULT_EMAIL, login
+from tests.helpers import register_owner
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
@@ -101,10 +101,16 @@ def client(client_factory) -> TestClient:
     return client_factory()
 
 
+@pytest.fixture(autouse=True)
+def _fast_password_hashing(monkeypatch) -> None:
+    """Тесты не должны платить за 600 000 итераций PBKDF2 на каждую регистрацию."""
+    monkeypatch.setattr(get_settings(), "password_iterations", 1_000)
+
+
 @pytest.fixture()
-def owner(client: TestClient, mailbox: FakeEmailSender) -> dict:
-    """Владелец, вошедший по коду. Заголовок Authorization остаётся на клиенте."""
-    return login(client, DEFAULT_EMAIL)
+def owner(client: TestClient) -> dict:
+    """Зарегистрированный владелец. Заголовок Authorization остаётся на клиенте."""
+    return register_owner(client)
 
 
 @pytest.fixture()

@@ -1,4 +1,4 @@
-"""Хелперы тестов: вход по коду и работа с токенами."""
+"""Хелперы тестов: регистрация, вход и работа с токенами."""
 
 from fastapi.testclient import TestClient
 
@@ -6,10 +6,61 @@ from app.models import CONSENT_VERSIONS, REQUIRED_CONSENTS
 
 API_V1 = "/api/v1"
 DEFAULT_EMAIL = "owner@example.com"
+DEFAULT_PASSWORD = "secret-pass-123"
 
 
 def consents_payload() -> list[dict]:
     return [{"kind": kind, "version": CONSENT_VERSIONS[kind]} for kind in REQUIRED_CONSENTS]
+
+
+def _body(response) -> dict | None:
+    return response.json() if response.content else None
+
+
+def register(
+    client: TestClient,
+    email: str = DEFAULT_EMAIL,
+    password: str = DEFAULT_PASSWORD,
+    *,
+    consents: list[dict] | None = None,
+) -> dict:
+    payload: dict = {"email": email, "password": password}
+    if consents is not None:
+        payload["consents"] = consents
+    else:
+        payload["consents"] = consents_payload()
+    response = client.post(f"{API_V1}/auth/register", json=payload)
+    return {"status_code": response.status_code, "body": _body(response)}
+
+
+def register_owner(
+    client: TestClient,
+    email: str = DEFAULT_EMAIL,
+    password: str = DEFAULT_PASSWORD,
+) -> dict:
+    """Регистрирует владельца и ставит заголовок Authorization на клиента."""
+    result = register(client, email, password)
+    assert result["status_code"] == 201, result["body"]
+    tokens = result["body"]
+    client.headers["Authorization"] = f"Bearer {tokens['access_token']}"
+    return tokens
+
+
+def login(client: TestClient, email: str = DEFAULT_EMAIL, password: str = DEFAULT_PASSWORD) -> dict:
+    response = client.post(f"{API_V1}/auth/login", json={"email": email, "password": password})
+    return {"status_code": response.status_code, "body": _body(response)}
+
+
+def login_owner(
+    client: TestClient,
+    email: str = DEFAULT_EMAIL,
+    password: str = DEFAULT_PASSWORD,
+) -> dict:
+    result = login(client, email, password)
+    assert result["status_code"] == 200, result["body"]
+    tokens = result["body"]
+    client.headers["Authorization"] = f"Bearer {tokens['access_token']}"
+    return tokens
 
 
 def request_code(client: TestClient, email: str = DEFAULT_EMAIL) -> str:
@@ -21,33 +72,9 @@ def request_code(client: TestClient, email: str = DEFAULT_EMAIL) -> str:
     return body["dev_code"]
 
 
-def verify_code(
-    client: TestClient,
-    email: str,
-    code: str,
-    *,
-    accept_consents: bool = True,
-) -> dict:
-    payload: dict = {"email": email, "code": code}
-    if accept_consents:
-        payload["consents"] = consents_payload()
-    response = client.post(f"{API_V1}/auth/otp/verify", json=payload)
-    return {"status_code": response.status_code, "body": response.json() if response.content else None}
-
-
-def login(
-    client: TestClient,
-    email: str = DEFAULT_EMAIL,
-    *,
-    accept_consents: bool = True,
-) -> dict:
-    """Полный вход: запрос кода, подтверждение и установка заголовка Authorization."""
-    code = request_code(client, email)
-    result = verify_code(client, email, code, accept_consents=accept_consents)
-    assert result["status_code"] == 200, result["body"]
-    tokens = result["body"]
-    client.headers["Authorization"] = f"Bearer {tokens['access_token']}"
-    return tokens
+def verify_code(client: TestClient, email: str, code: str) -> dict:
+    response = client.post(f"{API_V1}/auth/otp/verify", json={"email": email, "code": code})
+    return {"status_code": response.status_code, "body": _body(response)}
 
 
 def auth_headers(tokens: dict) -> dict:

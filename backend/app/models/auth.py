@@ -34,6 +34,11 @@ class User(Base):
     phone: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
     role: Mapped[str] = mapped_column(String(32), nullable=False, default=ROLE_OWNER)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=STATUS_ACTIVE)
+    # PBKDF2-хэш в формате algo$iterations$salt$hash; NULL у аккаунтов,
+    # созданных до появления паролей (входят по коду).
+    password_hash: Mapped[str | None] = mapped_column(String(255))
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(

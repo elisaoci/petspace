@@ -25,6 +25,9 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      # Код монтируется из репозитория: правки применяются перезапуском контейнера,
+      # пересобирать образ нужно только при изменении зависимостей.
+      - ./backend:/app
       # Фото питомцев и вложения: без volume файлы теряются при пересоздании контейнера.
       - uploads_data:/app/uploads
     extra_hosts:
@@ -34,18 +37,24 @@ services:
         condition: service_healthy
     command: >
       sh -c "alembic upgrade head &&
-      uvicorn app.main:app --host 0.0.0.0 --port 8000"
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/app"
 
   frontend:
     build: ./frontend
     environment:
       VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api/v1}
+      # Docker Desktop не всегда доставляет события файловой системы из bind-mount,
+      # поэтому dev-сервер опрашивает изменения.
+      VITE_USE_POLLING: "true"
     ports:
       - "5173:5173"
+    volumes:
+      - ./frontend:/usr/src/app
+      # node_modules остаются из образа: они собраны под Linux, хостовые не подходят.
+      - /usr/src/app/node_modules
     depends_on:
       - backend
 
 volumes:
   postgres_data:
   uploads_data:
-

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     otp_max_attempts: int = 5
     otp_max_requests_per_hour: int = 3
 
+    # Стоимость PBKDF2 и защита от подбора пароля.
+    password_iterations: int = 600_000
+    login_max_attempts: int = 5
+    login_lockout_minutes: int = 15
+
     # console — код печатается в логи backend, smtp — реальная отправка (подключим позже).
     email_sender: str = "console"
     email_from: str = "PetSpace <no-reply@petspace.local>"

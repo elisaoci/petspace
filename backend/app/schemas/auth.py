@@ -53,7 +53,25 @@ class ConsentsPayload(BaseModel):
 
 class OtpVerifyPayload(EmailPayload):
     code: str = Field(min_length=4, max_length=8)
+
+
+class RegisterPayload(EmailPayload):
+    password: str = Field(min_length=8, max_length=128)
+    # Проверяем согласия в роутере, чтобы вернуть единый формат ошибки consent_required.
     consents: list[ConsentPayload] = Field(default_factory=list)
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password(cls, value: str) -> str:
+        if value.strip() != value:
+            raise ValueError("Пароль не должен начинаться или заканчиваться пробелом")
+        if len(set(value)) < 3:
+            raise ValueError("Слишком простой пароль")
+        return value
+
+
+class LoginPayload(EmailPayload):
+    password: str = Field(min_length=1, max_length=128)
 
 
 class RefreshPayload(BaseModel):
@@ -67,6 +85,7 @@ class UserResponse(BaseModel):
     role: str
     status: str
     consents_accepted: bool
+    has_password: bool
     created_at: datetime
 
 

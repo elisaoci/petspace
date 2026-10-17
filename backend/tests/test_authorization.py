@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.models import AuditLog, CalendarEvent, Pet
-from tests.helpers import API_V1, login
+from tests.helpers import API_V1, register_owner
 
 SECOND_EMAIL = "second@example.com"
 
@@ -15,7 +15,7 @@ SECOND_EMAIL = "second@example.com"
 def stranger(client_factory) -> TestClient:
     """Второй владелец со своим токеном."""
     other = client_factory()
-    login(other, SECOND_EMAIL)
+    register_owner(other, SECOND_EMAIL)
     return other
 
 

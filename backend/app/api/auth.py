@@ -1,4 +1,4 @@
-"""Авторизация владельца: вход по одноразовому коду на email, JWT и согласия."""
+"""Авторизация владельца: регистрация и вход по паролю, вход по коду на email, согласия."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -7,9 +7,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, DbSession
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.models import (
     CONSENT_VERSIONS,
+    REQUIRED_CONSENTS,
     ROLE_OWNER,
     STATUS_ACTIVE,
     OtpCode,
@@ -18,10 +19,12 @@ from app.models import (
 from app.schemas.auth import (
     ConsentRequirement,
     ConsentsPayload,
+    LoginPayload,
     OtpRequestPayload,
     OtpRequestResponse,
     OtpVerifyPayload,
     RefreshPayload,
+    RegisterPayload,
     TokenPairResponse,
     UserResponse,
 )
@@ -32,6 +35,7 @@ from app.services.consents import (
     validate_consents,
 )
 from app.services.email import build_otp_message, get_email_sender
+from app.services.passwords import hash_password, verify_password
 from app.services.security import (
     codes_equal,
     generate_otp_code,
@@ -50,6 +54,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 OTP_CHANNEL_EMAIL = "email"
 OTP_PURPOSE_LOGIN = "login"
 
+INVALID_CREDENTIALS = "Неверный email или пароль"
+
 
 def _user_response(db: Session, user: User) -> UserResponse:
     return UserResponse(
@@ -59,17 +65,189 @@ def _user_response(db: Session, user: User) -> UserResponse:
         role=user.role,
         status=user.status,
         consents_accepted=not missing_required_consents(db, user.id),
+        has_password=user.password_hash is not None,
         created_at=user.created_at,
     )
 
 
-def _consent_pairs(payload: OtpVerifyPayload | ConsentsPayload) -> list[tuple[str, str]]:
+def _consent_pairs(payload: ConsentsPayload) -> list[tuple[str, str]]:
     return [(item.kind, item.version) for item in payload.consents]
+
+
+def _missing_required(pairs: list[tuple[str, str]]) -> list[str]:
+    provided = {kind for kind, _ in pairs}
+    return [kind for kind in REQUIRED_CONSENTS if kind not in provided]
+
+
+def _invalidate_consents(problems: list[str]) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail={"error": "invalid_consents", "problems": problems},
+    )
+
+
+def _complete_login(
+    db: Session, user: User, request: Request, settings: Settings, *, action: str
+) -> TokenPairResponse:
+    """Выдаёт пару токенов и пишет событие входа в аудит."""
+    access_token, refresh_token, expires_in = issue_token_pair(
+        db,
+        user,
+        settings,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    db.commit()
+    db.refresh(user)
+    record_audit(
+        db,
+        action=action,
+        actor_user_id=user.id,
+        entity="user",
+        entity_id=user.id,
+        request=request,
+    )
+    return TokenPairResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
+        user=_user_response(db, user),
+    )
+
+
+@router.post("/register", response_model=TokenPairResponse, status_code=status.HTTP_201_CREATED)
+def register(payload: RegisterPayload, request: Request, db: DbSession) -> TokenPairResponse:
+    """Регистрация владельца: email, пароль и обязательные согласия."""
+    settings = get_settings()
+    pairs = [(item.kind, item.version) for item in payload.consents]
+
+    problems = validate_consents(pairs)
+    if problems:
+        _invalidate_consents(problems)
+    missing = _missing_required(pairs)
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": "consent_required", "kinds": missing, "message": "Примите все согласия"},
+        )
+
+    if db.scalar(select(User).where(User.email == payload.email)) is not None:
+        record_audit(
+            db,
+            action="auth.register.rejected",
+            entity="user",
+            request=request,
+            details={"email": payload.email, "reason": "email_taken"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "email_taken", "message": "Этот email уже зарегистрирован — войдите"},
+        )
+
+    now = datetime.now(UTC)
+    user = User(
+        email=payload.email,
+        role=ROLE_OWNER,
+        status=STATUS_ACTIVE,
+        password_hash=hash_password(payload.password, settings.password_iterations),
+        email_verified_at=now,
+        last_login_at=now,
+    )
+    db.add(user)
+    db.flush()
+    record_consents(db, user.id, pairs, client_ip(request))
+
+    return _complete_login(db, user, request, settings, action="user.registered")
+
+
+@router.post("/login", response_model=TokenPairResponse)
+def login(payload: LoginPayload, request: Request, db: DbSession) -> TokenPairResponse:
+    """Вход по паролю. Ответ на неверные данные одинаковый: не подсказываем,
+    существует ли такой email."""
+    settings = get_settings()
+    now = datetime.now(UTC)
+    user = db.scalar(select(User).where(User.email == payload.email))
+
+    if user is None:
+        record_audit(
+            db,
+            action="auth.login.failure",
+            entity="user",
+            request=request,
+            details={"email": payload.email, "reason": "unknown_email"},
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_CREDENTIALS)
+
+    if user.status != STATUS_ACTIVE:
+        record_audit(
+            db,
+            action="auth.login.failure",
+            actor_user_id=user.id,
+            entity="user",
+            entity_id=user.id,
+            request=request,
+            details={"reason": "blocked"},
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_CREDENTIALS)
+
+    if user.locked_until is not None and user.locked_until > now:
+        retry_after = max(int((user.locked_until - now).total_seconds()), 1)
+        record_audit(
+            db,
+            action="auth.login.failure",
+            actor_user_id=user.id,
+            entity="user",
+            entity_id=user.id,
+            request=request,
+            details={"reason": "locked"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Слишком много неудачных попыток. Попробуйте позже или войдите по коду с почты.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    if user.password_hash is None:
+        record_audit(
+            db,
+            action="auth.login.failure",
+            actor_user_id=user.id,
+            entity="user",
+            entity_id=user.id,
+            request=request,
+            details={"reason": "password_not_set"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "password_not_set", "message": "У аккаунта нет пароля — войдите по коду с почты"},
+        )
+
+    if not verify_password(payload.password, user.password_hash):
+        user.failed_login_attempts += 1
+        if user.failed_login_attempts >= settings.login_max_attempts:
+            user.locked_until = now + timedelta(minutes=settings.login_lockout_minutes)
+            user.failed_login_attempts = 0
+        db.commit()
+        record_audit(
+            db,
+            action="auth.login.failure",
+            actor_user_id=user.id,
+            entity="user",
+            entity_id=user.id,
+            request=request,
+            details={"reason": "wrong_password", "attempts": user.failed_login_attempts},
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_CREDENTIALS)
+
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    user.last_login_at = now
+    return _complete_login(db, user, request, settings, action="auth.login")
 
 
 @router.post("/otp/request", response_model=OtpRequestResponse, status_code=status.HTTP_202_ACCEPTED)
 def request_otp(payload: OtpRequestPayload, request: Request, db: DbSession) -> OtpRequestResponse:
-    """Отправляет код входа. Ответ одинаковый для существующих и новых адресов:
+    """Отправляет код входа. Ответ одинаковый для существующих и неизвестных адресов:
     иначе по ответу API можно было бы узнать, есть ли у человека аккаунт."""
     settings = get_settings()
     now = datetime.now(UTC)
@@ -122,6 +300,11 @@ def request_otp(payload: OtpRequestPayload, request: Request, db: DbSession) -> 
 
 @router.post("/otp/verify", response_model=TokenPairResponse)
 def verify_otp(payload: OtpVerifyPayload, request: Request, db: DbSession) -> TokenPairResponse:
+    """Вход по коду — альтернатива паролю для существующего аккаунта.
+
+    Регистрации здесь нет: аккаунт создаётся только через `/auth/register`,
+    где принимаются согласия.
+    """
     settings = get_settings()
     now = datetime.now(UTC)
     destination = payload.email
@@ -170,61 +353,25 @@ def verify_otp(payload: OtpVerifyPayload, request: Request, db: DbSession) -> To
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный код")
 
     user = db.scalar(select(User).where(User.email == destination))
-    is_new_user = user is None
-
-    # Проверяем согласия до любых изменений в БД: иначе неудачная попытка
-    # израсходовала бы код и создала пользователя.
-    consent_pairs = _consent_pairs(payload)
-    if is_new_user and not consent_pairs:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "error": "consent_required",
-                "kinds": list(CONSENT_VERSIONS),
-                "message": "Для регистрации нужно принять согласия",
-            },
+    if user is None:
+        record_audit(
+            db,
+            action="otp.verify.failure",
+            entity="otp",
+            request=request,
+            details={"destination": destination, "reason": "unknown_email"},
         )
-    problems = validate_consents(consent_pairs)
-    if problems:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"error": "invalid_consents", "problems": problems},
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "user_not_found", "message": "Аккаунт не найден — зарегистрируйтесь"},
         )
+    if user.status != STATUS_ACTIVE:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_CREDENTIALS)
 
     otp.consumed_at = now
-    if user is None:
-        user = User(email=destination, role=ROLE_OWNER, status=STATUS_ACTIVE)
-        db.add(user)
-        db.flush()
-
     user.email_verified_at = user.email_verified_at or now
     user.last_login_at = now
-    record_consents(db, user.id, consent_pairs, client_ip(request))
-
-    access_token, refresh_token, expires_in = issue_token_pair(
-        db,
-        user,
-        settings,
-        ip=client_ip(request),
-        user_agent=request.headers.get("user-agent"),
-    )
-    db.commit()
-    db.refresh(user)
-
-    record_audit(
-        db,
-        action="user.registered" if is_new_user else "auth.login",
-        actor_user_id=user.id,
-        entity="user",
-        entity_id=user.id,
-        request=request,
-    )
-    return TokenPairResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=expires_in,
-        user=_user_response(db, user),
-    )
+    return _complete_login(db, user, request, settings, action="auth.login.code")
 
 
 @router.post("/refresh", response_model=TokenPairResponse)
@@ -283,10 +430,7 @@ def accept_consents(payload: ConsentsPayload, request: Request, user: CurrentUse
     pairs = _consent_pairs(payload)
     problems = validate_consents(pairs)
     if problems:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"error": "invalid_consents", "problems": problems},
-        )
+        _invalidate_consents(problems)
     record_consents(db, user.id, pairs, client_ip(request))
     db.commit()
     record_audit(
