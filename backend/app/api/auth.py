@@ -294,7 +294,8 @@ def request_otp(payload: OtpRequestPayload, request: Request, db: DbSession) -> 
     return OtpRequestResponse(
         message="Если адрес указан верно, код отправлен",
         expires_in=settings.otp_ttl_minutes * 60,
-        dev_code=None if settings.is_production else code,
+        # Код отдаётся только при явно включённом EXPOSE_DEV_OTP (локальная разработка).
+        dev_code=code if settings.expose_dev_otp else None,
     )
 
 

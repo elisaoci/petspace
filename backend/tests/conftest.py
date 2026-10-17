@@ -102,9 +102,12 @@ def client(client_factory) -> TestClient:
 
 
 @pytest.fixture(autouse=True)
-def _fast_password_hashing(monkeypatch) -> None:
-    """Тесты не должны платить за 600 000 итераций PBKDF2 на каждую регистрацию."""
-    monkeypatch.setattr(get_settings(), "password_iterations", 1_000)
+def _test_settings(monkeypatch) -> None:
+    """Тесты не должны платить за 600 000 итераций PBKDF2, а код входа
+    берут из ответа API, как это делает локальная разработка."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "password_iterations", 1_000)
+    monkeypatch.setattr(settings, "expose_dev_otp", True)
 
 
 @pytest.fixture()

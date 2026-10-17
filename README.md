@@ -19,15 +19,18 @@ docker compose -p petspace up -d --build
 docker compose -p petspace exec backend python -m app.seed
 ```
 
-Откройте http://localhost:5173 (Swagger — http://localhost:8000/docs). Демо-владелец:
-`demo@petspace.local` / `demo12345`. Вместо пароля можно войти по коду с почты — код вернётся
-в ответе API и попадёт в логи backend, потому что почтовый провайдер ещё не подключён.
+Откройте http://localhost:5173 (Swagger — http://localhost:8000/docs).
+
+Вход в демо: `demo@petspace.local` **без пароля** — нажмите «Войти по коду с почты». Код показывается
+на экране и печатается в лог backend, потому что почтовый провайдер ещё не подключён.
+Пароль демо-владельцу можно задать самому: впишите `DEMO_OWNER_PASSWORD` в `.env` и запустите сидер
+снова. Ни в коде, ни в выводе сидера пароля нет — секреты не должны попадать в логи и историю.
 
 Флаг `-d` обязателен, если вы не хотите держать терминал занятым: без него `Ctrl+C` останавливает контейнеры.
 
 Миграции Alembic применяются автоматически: в `docker-compose.yml` backend запускается командой
 `alembic upgrade head && uvicorn app.main:app ...` и ждёт healthcheck базы. Сидер (`app.seed`) создаёт
-владельца с паролем, его согласия и питомца «Макс» с двумя событиями календаря, а также привязывает
+владельца, его согласия и питомца «Макс» с двумя событиями календаря, а также привязывает
 к владельцу питомцев, созданных до появления авторизации.
 
 **Код монтируется в контейнеры** (`./backend:/app`, `./frontend:/usr/src/app`), поэтому правки
@@ -199,13 +202,18 @@ refresh-токенов, обнаружение повторного исполь
   возвращают `404` (а не `403`), чтобы нельзя было выяснить существование чужой карточки.
 - **Аудит.** В `audit_logs` попадают регистрация, входы и неудачные попытки, ротация и кража токенов,
   обращения к публичной медкарте, удаление питомца и перевыпуск ссылки медкарты.
+- **Секретов в логах нет.** Пароль демо-владельца задаётся только через `DEMO_OWNER_PASSWORD` и нигде
+  не печатается; код входа отдаётся в ответе API лишь при `EXPOSE_DEV_OTP=true` (локальная разработка),
+  а в prod конфигурация с этим флагом или с демо-паролем просто не запустится.
 
-Пример через curl:
+Пример через curl (регистрация нового аккаунта и запрос питомцев):
 
 ```bash
 API=http://localhost:8000/api/v1
-ACCESS=$(curl -s -X POST $API/auth/login -H 'Content-Type: application/json' \
-  -d '{"email":"demo@petspace.local","password":"demo12345"}' \
+ACCESS=$(curl -s -X POST $API/auth/register -H 'Content-Type: application/json' \
+  -d '{"email":"me@example.com","password":"strong-pass-1",
+       "consents":[{"kind":"terms","version":"2026-01-01"},
+                   {"kind":"privacy","version":"2026-01-01"}]}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
 curl -s -H "Authorization: Bearer $ACCESS" $API/pets
 ```
@@ -227,6 +235,8 @@ curl -s -H "Authorization: Bearer $ACCESS" $API/pets
 | `OTP_MAX_ATTEMPTS` | попыток ввода одного кода | `5` |
 | `OTP_MAX_REQUESTS_PER_HOUR` | запросов кода на адрес в час | `3` |
 | `EMAIL_SENDER` | способ отправки писем; `console` пишет в лог | `console` |
+| `EXPOSE_DEV_OTP` | отдавать код входа в ответе API (только локальная разработка; в prod запрещено) | `false` |
+| `DEMO_OWNER_PASSWORD` | пароль демо-владельца для сидера; нигде не печатается, в prod запрещён | пусто |
 | `OLLAMA_BASE_URL` | адрес Ollama | `http://localhost:11434` |
 | `OLLAMA_MODEL` | модель для чата | `qwen2.5:3b` |
 | `VITE_API_URL` | база API для фронтенда | `http://localhost:8000/api/v1` |
@@ -324,16 +334,16 @@ docker compose -p petspace up -d --build frontend
 `docker compose -p petspace exec backend python -m app.seed`.
 
 **Кабинет просит войти или API отвечает 401.** Это ожидаемо: без токена доступ закрыт. Войдите на
-`/login`: демо-владелец `demo@petspace.local` / `demo12345`.
+`/login` — email `demo@petspace.local` и «Войти по коду с почты» (пароля у демо-аккаунта по умолчанию нет).
 
 **Пароль не подходит, а аккаунт создан раньше.** У аккаунтов из ранних версий пароля нет — войдите
-по коду с почты. Демо-владельцу пароль выставляет сидер (`demo12345`), так что после
-`python -m app.seed` вход по паролю работает.
+по коду с почты. Пароль демо-владельцу можно задать через `DEMO_OWNER_PASSWORD` в `.env`
+и повторный запуск сидера; значение никуда не выводится.
 
 **Забыли пароль.** Восстановления пока нет: используйте вход по коду с почты.
 
 **Код входа не приходит на почту.** Почтовый провайдер ещё не подключён: `EMAIL_SENDER=console`
-печатает письмо в лог backend, а вне `ENVIRONMENT=prod` код возвращается полем `dev_code`.
+печатает письмо в лог backend, а при `EXPOSE_DEV_OTP=true` код дополнительно виден на экране входа.
 
 **Чат отвечает ошибкой или молчит.** Проверьте `ollama pull qwen2.5:3b`,
 `curl http://localhost:11434/api/tags` и `brew services list` (там `ollama` должен быть `started`);

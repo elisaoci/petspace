@@ -22,6 +22,10 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
       UPLOAD_DIR: /app/uploads
+      # Локальная разработка: код входа возвращается в ответе, чтобы демо работало без почты.
+      EXPOSE_DEV_OTP: ${EXPOSE_DEV_OTP:-false}
+      # Пароль демо-владельца задаётся только здесь; в коде и логах его нет.
+      DEMO_OWNER_PASSWORD: ${DEMO_OWNER_PASSWORD:-}
     ports:
       - "8000:8000"
     volumes:

@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     email_sender: str = "console"
     email_from: str = "PetSpace <no-reply@petspace.local>"
 
+    # Только для локальной разработки: возвращать код входа в ответе API,
+    # чтобы демо работало без почтового провайдера. В prod запрещено валидатором.
+    expose_dev_otp: bool = False
+
+    # Пароль демо-владельца задаётся переменной окружения, а не константой в коде
+    # и никогда не печатается: иначе он попадает в логи и в историю терминала.
+    demo_owner_password: str | None = None
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @model_validator(mode="after")
@@ -42,6 +50,10 @@ class Settings(BaseSettings):
                 raise ValueError("JWT_SECRET обязателен в prod: задайте случайное значение")
             if len(self.jwt_secret) < 32:
                 raise ValueError("JWT_SECRET в prod должен быть не короче 32 символов")
+            if self.expose_dev_otp:
+                raise ValueError("EXPOSE_DEV_OTP недопустим в prod: код входа нельзя отдавать в ответе")
+            if self.demo_owner_password:
+                raise ValueError("DEMO_OWNER_PASSWORD недопустим в prod: демо-данные в prod не создаются")
         return self
 
     @property

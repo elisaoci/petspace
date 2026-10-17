@@ -2,6 +2,10 @@
 
 Создаёт владельца, согласия и питомца «Макс», а также привязывает к нему питомцев,
 созданных до появления авторизации (у них `owner_id` пустой и они никому не видны).
+
+Пароль демо-владельца берётся только из окружения (`DEMO_OWNER_PASSWORD`) и никогда
+не печатается: секреты не должны попадать в логи и историю терминала. Без переменной
+аккаунт создаётся без пароля, и вход идёт по коду с почты.
 """
 
 from datetime import UTC, date, datetime, timedelta
@@ -9,6 +13,7 @@ from secrets import token_urlsafe
 
 from sqlalchemy import select
 
+from app.config import get_settings
 from app.database import SessionLocal
 from app.models import (
     CONSENT_VERSIONS,
@@ -22,27 +27,35 @@ from app.models import (
 from app.services.passwords import hash_password
 
 DEMO_OWNER_EMAIL = "demo@petspace.local"
-DEMO_OWNER_PASSWORD = "demo12345"
 
 
-def _get_or_create_owner(db) -> tuple[User, bool, bool]:
-    """Возвращает (владелец, создан, пароль выставлен)."""
+def _get_or_create_owner(db) -> tuple[User, bool, str]:
+    """Возвращает (владелец, создан, состояние пароля).
+
+    Состояние пароля: "set" — задан из окружения, "absent" — пароля нет,
+    "already" — пароль уже был, не перезаписываем.
+    """
+    configured_password = get_settings().demo_owner_password
     user = db.scalar(select(User).where(User.email == DEMO_OWNER_EMAIL))
     created = user is None
     if user is None:
         user = User(
             email=DEMO_OWNER_EMAIL,
             role=ROLE_OWNER,
-            password_hash=hash_password(DEMO_OWNER_PASSWORD),
+            password_hash=hash_password(configured_password) if configured_password else None,
             email_verified_at=datetime.now(UTC),
         )
         db.add(user)
         db.flush()
-    password_set = False
-    if user.password_hash is None:
-        # Аккаунт из ранних версий: задаём пароль, чтобы можно было войти.
-        user.password_hash = hash_password(DEMO_OWNER_PASSWORD)
-        password_set = True
+        password_state = "set" if configured_password else "absent"
+    elif user.password_hash is None:
+        if configured_password:
+            user.password_hash = hash_password(configured_password)
+            password_state = "set"
+        else:
+            password_state = "absent"
+    else:
+        password_state = "already"
     for kind in REQUIRED_CONSENTS:
         accepted = db.scalar(
             select(Consent).where(
@@ -53,17 +66,15 @@ def _get_or_create_owner(db) -> tuple[User, bool, bool]:
         )
         if accepted is None:
             db.add(Consent(user_id=user.id, kind=kind, version=CONSENT_VERSIONS[kind]))
-    return user, created, password_set
+    return user, created, password_state
 
 
 def main() -> None:
     """Идемпотентно: сидер можно запускать сколько угодно раз, дублей он не создаёт."""
     with SessionLocal() as db:
-        owner, owner_created, password_set = _get_or_create_owner(db)
+        owner, owner_created, password_state = _get_or_create_owner(db)
         state = "Создан" if owner_created else "Уже существует"
         print(f"{state} демо-владелец: {DEMO_OWNER_EMAIL} (id={owner.id})")
-        if password_set:
-            print(f"Демо-пароль выставлен: {DEMO_OWNER_PASSWORD}")
 
         pet = db.scalar(select(Pet).where(Pet.name == "Макс"))
         if pet is None:
@@ -95,8 +106,14 @@ def main() -> None:
 
         db.commit()
 
-    print("Готово. Вход: " + DEMO_OWNER_EMAIL)
-    print(f"Пароль: {DEMO_OWNER_PASSWORD} (или код из логов backend)")
+    print("Готово. Аккаунт: " + DEMO_OWNER_EMAIL)
+    if password_state == "set":
+        print("Пароль задан из DEMO_OWNER_PASSWORD (в вывод не выводится).")
+    elif password_state == "already":
+        print("Пароль уже был задан — не перезаписываю.")
+    else:
+        print("Пароля нет: вход по коду с почты, код придёт в логи backend.")
+        print("Чтобы включить вход по паролю, задайте DEMO_OWNER_PASSWORD в .env и запустите сидер снова.")
 
 
 if __name__ == "__main__":

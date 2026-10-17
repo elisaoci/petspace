@@ -1,6 +1,9 @@
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from app.config import Settings, get_settings
 from app.models import CONSENT_VERSIONS, REQUIRED_CONSENTS, Consent, User
 from tests.helpers import (
     API_V1,
@@ -162,6 +165,37 @@ def test_otp_does_not_register_new_account(client: TestClient) -> None:
 
     assert result["status_code"] == 404
     assert result["body"]["detail"]["error"] == "user_not_found"
+
+
+def test_otp_code_is_not_returned_without_dev_flag(client: TestClient, monkeypatch) -> None:
+    """Код входа не отдаётся в ответе, если флаг разработки выключен."""
+    monkeypatch.setattr(get_settings(), "expose_dev_otp", False)
+
+    response = client.post(f"{API_V1}/auth/otp/request", json={"email": "anyone@example.com"})
+
+    assert response.status_code == 202
+    assert response.json()["dev_code"] is None
+
+
+def test_production_refuses_dev_otp_exposure() -> None:
+    """Конфигурация с отдачей кода входа не должна подниматься в prod."""
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="prod",
+            jwt_secret="x" * 40,
+            expose_dev_otp=True,
+            demo_owner_password=None,
+        )
+
+
+def test_production_refuses_demo_password() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="prod",
+            jwt_secret="x" * 40,
+            expose_dev_otp=False,
+            demo_owner_password="secret",
+        )
 
 
 def test_otp_request_is_rate_limited(client: TestClient) -> None:
