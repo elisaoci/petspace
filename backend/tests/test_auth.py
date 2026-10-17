@@ -184,17 +184,6 @@ def test_production_refuses_dev_otp_exposure() -> None:
             environment="prod",
             jwt_secret="x" * 40,
             expose_dev_otp=True,
-            demo_owner_password=None,
-        )
-
-
-def test_production_refuses_demo_password() -> None:
-    with pytest.raises(ValidationError):
-        Settings(
-            environment="prod",
-            jwt_secret="x" * 40,
-            expose_dev_otp=False,
-            demo_owner_password="secret",
         )
 
 
