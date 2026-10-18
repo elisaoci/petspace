@@ -314,8 +314,8 @@ export function LoginPage() {
 
 function authErrorMessage(caught: unknown, what: string): string {
   if (caught instanceof ApiError) {
-    const detail = caught.detail as { error?: string; message?: string } | string | undefined;
-    if (detail && typeof detail === "object" && detail.error === "email_taken") {
+    const detail = caught.detail as { message?: string } | string | undefined;
+    if (caught.code === "email_taken") {
       return "Этот email уже зарегистрирован — перейдите на вкладку «Вход».";
     }
     if (caught.status === 429) {

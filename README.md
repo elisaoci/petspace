@@ -217,6 +217,20 @@ refresh-токенов, обнаружение повторного исполь
 - **Секретов в логах нет.** Пароли не печатаются нигде: ни в сидере, ни в логах, ни в ответах API.
   Код входа отдаётся в ответе API лишь при `EXPOSE_DEV_OTP=true` (локальная разработка), а в prod
   конфигурация с этим флагом просто не запустится.
+- **Шифрование медицинских данных.** Заметки владельца (аллергии, хронические болезни) и переписка
+  с ИИ шифруются на уровне приложения: AES-256-GCM, формат `enc:v1:<base64(nonce+ciphertext)>`.
+  Ключ — `MEDICAL_ENCRYPTION_KEY` (32 байта в base64), в prod обязателен; в dev выводится из
+  `JWT_SECRET`, чтобы локальный запуск работал без настройки. Старые записи открытым текстом
+  читаются как есть, а разово зашифровать их можно командой
+  `docker compose -p petspace exec backend python -m app.cli backfill-encryption`.
+  Пакет `cryptography` добавлен в `requirements.txt` — после обновления нужна пересборка backend:
+  `docker compose -p petspace up -d --build backend`.
+- **Роли.** `owner`, `clinic_admin`, `clinic_doctor`, `clinic_registrar`, `platform_admin`.
+  Проверка прав — зависимость `require_roles`; роль платформенного администратора выдаётся командой
+  `docker compose -p petspace exec backend python -m app.cli promote --email you@example.com`.
+  Админка: `GET /api/v1/admin/audit` и `GET /api/v1/admin/users` (только `platform_admin`).
+- **Смена версии согласий.** Если тексты обновились, при входе показывается экран с новыми версиями:
+  без подтверждения кабинет закрыт (проверка на фронтенде и `403 consent_required` на бэкенде).
 
 Пример через curl (регистрация нового аккаунта и запрос питомцев):
 
@@ -248,6 +262,7 @@ curl -s -H "Authorization: Bearer $ACCESS" $API/pets
 | `OTP_MAX_REQUESTS_PER_HOUR` | запросов кода на адрес в час | `3` |
 | `EMAIL_SENDER` | способ отправки писем; `console` пишет в лог | `console` |
 | `EXPOSE_DEV_OTP` | отдавать код входа в ответе API (только локальная разработка; в prod запрещено) | `false` |
+| `MEDICAL_ENCRYPTION_KEY` | ключ AES-256-GCM для заметок и чата, 32 байта в base64; в prod обязателен | в dev выводится из `JWT_SECRET` |
 | `OLLAMA_BASE_URL` | адрес Ollama | `http://localhost:11434` |
 | `OLLAMA_MODEL` | модель для чата | `qwen2.5:3b` |
 | `VITE_API_URL` | база API для фронтенда | `http://localhost:8000/api/v1` |
@@ -285,15 +300,53 @@ backend всегда ходит на `db:5432`.
 | POST | `/api/v1/chat/stream` | SSE-поток ответа Ollama с контекстом питомца |
 | GET/DELETE | `/api/v1/chat/history/{conversation_id}` | история и очистка диалога |
 | POST | `/api/v1/payments/demo` | заглушка демо-оплаты: карта не обрабатывается и не сохраняется |
+| GET | `/api/v1/admin/audit` | журнал доступа к данным (только `platform_admin`) |
+| GET | `/api/v1/admin/users` | список пользователей (только `platform_admin`) |
 
 Всё, кроме `health` и публичной медкарты, требует заголовок `Authorization: Bearer <access_token>`.
 
 Статус `overdue` не хранится в БД, а вычисляется на лету: событие просрочено, если его `starts_at`
 в прошлом и статус не `done`/`cancelled` (`app/api/events.py`).
 
+## Соглашения API
+
+**Ошибки** приходят в едином формате:
+
+```json
+{"error": {"code": "not_found", "message": "Pet not found"}, "detail": "Pet not found"}
+```
+
+`code` — машинный идентификатор (`unauthorized`, `not_found`, `validation_error`,
+`consent_required`, `idempotency_conflict`, `too_many_requests`, `internal_error` и т.д.),
+`message` — текст для человека, `details` — контекст (список ошибок валидации, каких согласий
+не хватает). Поле `detail` дублирует сообщение для старых клиентов и будет удалено.
+
+**Пагинация** — `limit` (по умолчанию 50, максимум 200) и `offset`. Ответ остаётся массивом,
+а общее количество приходит в заголовке `X-Total-Count`:
+
+```bash
+curl -H "Authorization: Bearer $ACCESS" "$API/pets?limit=20&offset=40" -D -
+```
+
+**Идемпотентность** — заголовок `Idempotency-Key` на `POST /pets` и `POST /events`:
+повтор с тем же ключом и тем же телом вернёт сохранённый ответ с заголовком `Idempotent-Replay: true`,
+с другим телом — `409 idempotency_conflict`. Ключи живут 24 часа и привязаны к пользователю,
+поэтому ретрай из-за таймаута не создаёт дубль.
+
+```bash
+curl -X POST "$API/pets" -H "Authorization: Bearer $ACCESS" \
+  -H 'Content-Type: application/json' -H 'Idempotency-Key: create-pet-1' \
+  -d '{"name":"Бублик"}'
+```
+
+**Ограничение частоты** на уровне шлюза настраивается в [infra/nginx/petspace.conf](infra/nginx/petspace.conf):
+общий лимит на IP и отдельный строгий лимит на `/api/v1/auth/` (перебор паролей и кодов), плюс
+отдельная обработка SSE-потока чата без буферизации.
+
 ## Возможности MVP
 
-- вход владельца по одноразовому коду, согласия с версиями текста и журнал доступа к данным;
+- вход владельца по паролю и по коду, согласия с версиями текста, роли и журнал доступа к данным;
+- шифрование медицинских текстов (AES-256-GCM), единый формат ошибок, пагинация и идемпотентность записи;
 - профиль и несколько питомцев, фото, случайная публичная ссылка медкарты;
 - календарь прививок и обработок с вычисляемым статусом `overdue`;
 - SSE-чат с Ollama, персональным системным контекстом и очисткой истории;
@@ -308,9 +361,14 @@ backend всегда ходит на `db:5432`.
 
 ```
 .github/workflows/  CI: линтер, тесты, сборка и проверка контейнеров
+infra/nginx/       конфигурация шлюза: TLS, ограничение частоты, SSE без буферизации
 backend/
-  app/api/          роутеры: auth, pets, events, chat, payments, health; deps.py — доступ и роли
-  app/models/       модели: entities.py (питомцы, календарь, чат), auth.py (пользователи, OTP, токены, согласия, аудит)
+  app/api/          роутеры: auth, pets, events, chat, payments, admin, health;
+                    deps.py — доступ и роли, errors.py — единый формат ошибок, pagination.py
+  app/models/       модели: entities.py (питомцы, календарь, чат), auth.py (пользователи, OTP,
+                    токены, согласия, аудит), idempotency.py
+  app/services/     security, sessions, passwords, crypto (AES-256-GCM), consents, email, audit, idempotency
+  app/cli.py        promote (выдать platform_admin) и backfill-encryption
   app/schemas/      Pydantic-схемы
   app/services/     security (JWT/OTP), sessions (ротация токенов), consents, email, audit, демо-платежи
   app/seed.py       сидер демо-данных

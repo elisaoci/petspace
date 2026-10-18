@@ -9,12 +9,14 @@ export const SESSION_EXPIRED_EVENT = "petspace:session-expired";
 export class ApiError extends Error {
   status: number;
   detail: unknown;
+  code?: string;
 
-  constructor(status: number, message: string, detail?: unknown) {
+  constructor(status: number, message: string, detail?: unknown, code?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+    this.code = code;
   }
 }
 
@@ -94,19 +96,30 @@ export async function authorizedFetch(path: string, init: RequestInit = {}, allo
 async function errorFrom(response: Response): Promise<ApiError> {
   const text = await response.text();
   let detail: unknown = text;
+  let code: string | undefined;
   let message = text || `HTTP ${response.status}`;
   try {
-    const parsed = JSON.parse(text) as { detail?: unknown };
-    detail = parsed.detail ?? parsed;
-    if (typeof detail === "string") {
-      message = detail;
-    } else if (detail && typeof detail === "object" && "message" in detail) {
-      message = String((detail as { message: unknown }).message);
+    const parsed = JSON.parse(text) as {
+      error?: { code?: string; message?: string; details?: unknown };
+      detail?: unknown;
+    };
+    if (parsed.error && typeof parsed.error === "object") {
+      // Единый формат ошибок бэкенда: {"error": {"code", "message", "details"}}
+      code = parsed.error.code;
+      detail = parsed.error.details ?? parsed.error;
+      message = parsed.error.message ?? message;
+    } else {
+      detail = parsed.detail ?? parsed;
+      if (typeof detail === "string") {
+        message = detail;
+      } else if (detail && typeof detail === "object" && "message" in detail) {
+        message = String((detail as { message: unknown }).message);
+      }
     }
   } catch {
     // Ответ не JSON: оставляем текст как есть.
   }
-  return new ApiError(response.status, message, detail);
+  return new ApiError(response.status, message, detail, code);
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {

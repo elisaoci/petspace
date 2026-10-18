@@ -4,6 +4,7 @@ from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.services.crypto import EncryptedText
 
 
 class Pet(Base):
@@ -20,7 +21,8 @@ class Pet(Base):
     weight_kg: Mapped[float | None] = mapped_column(nullable=True)
     height_cm: Mapped[float | None] = mapped_column(nullable=True)
     photo_url: Mapped[str | None] = mapped_column(String(500))
-    owner_notes: Mapped[str | None] = mapped_column(Text)
+    # Аллергии и хронические болезни — медицинские данные, шифруются AES-256-GCM.
+    owner_notes: Mapped[str | None] = mapped_column(EncryptedText)
     medical_secret_token: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     events: Mapped[list["CalendarEvent"]] = relationship(back_populates="pet", cascade="all, delete-orphan")
@@ -46,7 +48,8 @@ class ChatMessage(Base):
     pet_id: Mapped[int | None] = mapped_column(ForeignKey("pets.id", ondelete="CASCADE"), index=True)
     conversation_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Переписка с ИИ содержит описание симптомов — тоже медицинские данные.
+    content: Mapped[str] = mapped_column(EncryptedText, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     pet: Mapped[Pet | None] = relationship(back_populates="messages")
 

@@ -3,8 +3,12 @@ from app.models.auth import (
     CONSENT_TERMS,
     CONSENT_VERSIONS,
     REQUIRED_CONSENTS,
+    ROLE_CLINIC_ADMIN,
+    ROLE_CLINIC_DOCTOR,
+    ROLE_CLINIC_REGISTRAR,
     ROLE_OWNER,
     ROLE_PLATFORM_ADMIN,
+    ROLES,
     STATUS_ACTIVE,
     STATUS_BLOCKED,
     AuditLog,
@@ -14,6 +18,7 @@ from app.models.auth import (
     User,
 )
 from app.models.entities import CalendarEvent, ChatMessage, Pet, Subscription
+from app.models.idempotency import IdempotencyKey
 
 __all__ = [
     "AuditLog",
@@ -21,13 +26,18 @@ __all__ = [
     "CONSENT_TERMS",
     "CONSENT_VERSIONS",
     "REQUIRED_CONSENTS",
+    "ROLE_CLINIC_ADMIN",
+    "ROLE_CLINIC_DOCTOR",
+    "ROLE_CLINIC_REGISTRAR",
     "ROLE_OWNER",
     "ROLE_PLATFORM_ADMIN",
+    "ROLES",
     "STATUS_ACTIVE",
     "STATUS_BLOCKED",
     "CalendarEvent",
     "ChatMessage",
     "Consent",
+    "IdempotencyKey",
     "OtpCode",
     "Pet",
     "RefreshToken",

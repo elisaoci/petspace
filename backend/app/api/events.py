@@ -1,15 +1,18 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Request, Response
+from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbSession, get_owned_pet
+from app.api.pagination import PaginationParams, pagination_headers
 from app.models import CalendarEvent, Pet
 from app.schemas.events import EventCreate, EventResponse, EventUpdate
+from app.services.idempotency import IDEMPOTENCY_HEADER, replay_response, store_response
 
 router = APIRouter(prefix="/events", tags=["events"])
 
 FINAL_STATUSES = {"done", "cancelled"}
+ENDPOINT_CREATE = "POST /events"
 
 
 def _response(event: CalendarEvent) -> EventResponse:
@@ -32,26 +35,65 @@ def _owned_event(event_id: int, user: CurrentUser, db: DbSession) -> CalendarEve
 
 
 @router.get("", response_model=list[EventResponse])
-def list_events(user: CurrentUser, db: DbSession, pet_id: int | None = None):
-    query = (
+def list_events(
+    user: CurrentUser,
+    pagination: PaginationParams,
+    response: Response,
+    db: DbSession,
+    pet_id: int | None = None,
+):
+    conditions = [Pet.owner_id == user.id]
+    if pet_id is not None:
+        conditions.append(CalendarEvent.pet_id == pet_id)
+
+    total = db.scalar(
+        select(func.count())
+        .select_from(CalendarEvent)
+        .join(Pet, Pet.id == CalendarEvent.pet_id)
+        .where(*conditions)
+    ) or 0
+    rows = db.scalars(
         select(CalendarEvent)
         .join(Pet, Pet.id == CalendarEvent.pet_id)
-        .where(Pet.owner_id == user.id)
+        .where(*conditions)
         .order_by(CalendarEvent.starts_at)
-    )
-    if pet_id is not None:
-        query = query.where(CalendarEvent.pet_id == pet_id)
-    return [_response(e) for e in db.scalars(query).all()]
+        .limit(pagination.limit)
+        .offset(pagination.offset)
+    ).all()
+    pagination_headers(response, total=total, pagination=pagination)
+    return [_response(e) for e in rows]
 
 
 @router.post("", response_model=EventResponse, status_code=201)
-def create_event(payload: EventCreate, user: CurrentUser, db: DbSession):
+def create_event(payload: EventCreate, request: Request, user: CurrentUser, db: DbSession):
     get_owned_pet(payload.pet_id, user, db)
+
+    idempotency_key = request.headers.get(IDEMPOTENCY_HEADER)
+    payload_data = payload.model_dump(mode="json")
+    if idempotency_key:
+        replayed = replay_response(
+            db, user_id=user.id, key=idempotency_key, endpoint=ENDPOINT_CREATE, payload=payload_data
+        )
+        if replayed is not None:
+            return replayed
+
     event = CalendarEvent(**payload.model_dump())
     db.add(event)
     db.commit()
     db.refresh(event)
-    return _response(event)
+
+    body = _response(event).model_dump(mode="json")
+    if idempotency_key:
+        store_response(
+            db,
+            user_id=user.id,
+            key=idempotency_key,
+            endpoint=ENDPOINT_CREATE,
+            payload=payload_data,
+            status_code=201,
+            body=body,
+        )
+    return body
 
 
 @router.get("/{event_id}", response_model=EventResponse)

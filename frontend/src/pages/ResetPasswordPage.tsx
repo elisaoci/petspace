@@ -166,12 +166,10 @@ export function ResetPasswordPage() {
 
 function message(caught: unknown): string {
   if (caught instanceof ApiError) {
-    const detail = caught.detail as { error?: string; message?: string } | string | undefined;
+    if (caught.code === "user_not_found") return "Аккаунт с таким email не найден.";
+    const detail = caught.detail as { message?: string } | string | undefined;
     if (typeof detail === "string") return detail;
-    if (detail && typeof detail === "object") {
-      if (detail.error === "user_not_found") return "Аккаунт с таким email не найден.";
-      if (detail.message) return detail.message;
-    }
+    if (detail && typeof detail === "object" && detail.message) return detail.message;
     if (caught.status === 401) return "Код не подошёл: проверьте его или запросите новый.";
     if (caught.status === 429) return "Слишком много попыток. Подождите несколько минут.";
     if (caught.status === 422) return "Пароль не соответствует требованиям (минимум 8 символов).";

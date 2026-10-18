@@ -11,10 +11,21 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
-# Роли пользователя. Роли клиник (clinic_admin, clinic_doctor, clinic_registrar)
-# появятся вместе с кабинетом клиники.
+# Роли пользователя. Роли клиник заведены заранее: кабинет клиники появится
+# на следующем этапе, а RBAC-проверки (require_roles) работают уже сейчас.
 ROLE_OWNER = "owner"
+ROLE_CLINIC_ADMIN = "clinic_admin"
+ROLE_CLINIC_DOCTOR = "clinic_doctor"
+ROLE_CLINIC_REGISTRAR = "clinic_registrar"
 ROLE_PLATFORM_ADMIN = "platform_admin"
+
+ROLES = (
+    ROLE_OWNER,
+    ROLE_CLINIC_ADMIN,
+    ROLE_CLINIC_DOCTOR,
+    ROLE_CLINIC_REGISTRAR,
+    ROLE_PLATFORM_ADMIN,
+)
 
 STATUS_ACTIVE = "active"
 STATUS_BLOCKED = "blocked"

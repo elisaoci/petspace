@@ -2,24 +2,36 @@ from datetime import date
 from pathlib import Path
 from secrets import token_urlsafe
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
+from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbSession, get_owned_pet, require_consents
+from app.api.pagination import PaginationParams, pagination_headers
 from app.config import get_settings
 from app.models import REQUIRED_CONSENTS, Pet
 from app.schemas.pets import PetCreate, PetResponse, PetUpdate, PublicMedicalCard
 from app.services.audit import ACTOR_ANONYMOUS, record_audit
+from app.services.idempotency import IDEMPOTENCY_HEADER, replay_response, store_response
 
 router = APIRouter(prefix="/pets", tags=["pets"])
 
 ALLOWED_PHOTO_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+ENDPOINT_CREATE = "POST /pets"
 
 
 @router.get("", response_model=list[PetResponse])
-def list_pets(user: CurrentUser, db: DbSession):
+def list_pets(user: CurrentUser, pagination: PaginationParams, response: Response, db: DbSession):
     """Только питомцы текущего владельца: чужой питомец не виден ни в одном списке."""
-    return db.scalars(select(Pet).where(Pet.owner_id == user.id).order_by(Pet.id)).all()
+    total = db.scalar(select(func.count()).select_from(Pet).where(Pet.owner_id == user.id)) or 0
+    rows = db.scalars(
+        select(Pet)
+        .where(Pet.owner_id == user.id)
+        .order_by(Pet.id)
+        .limit(pagination.limit)
+        .offset(pagination.offset)
+    ).all()
+    pagination_headers(response, total=total, pagination=pagination)
+    return list(rows)
 
 
 @router.post(
@@ -28,12 +40,33 @@ def list_pets(user: CurrentUser, db: DbSession):
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_consents(*REQUIRED_CONSENTS))],
 )
-def create_pet(payload: PetCreate, user: CurrentUser, db: DbSession):
+def create_pet(payload: PetCreate, request: Request, user: CurrentUser, db: DbSession):
+    idempotency_key = request.headers.get(IDEMPOTENCY_HEADER)
+    payload_data = payload.model_dump(mode="json")
+    if idempotency_key:
+        replayed = replay_response(
+            db, user_id=user.id, key=idempotency_key, endpoint=ENDPOINT_CREATE, payload=payload_data
+        )
+        if replayed is not None:
+            return replayed
+
     pet = Pet(**payload.model_dump(), owner_id=user.id, medical_secret_token=token_urlsafe(32))
     db.add(pet)
     db.commit()
     db.refresh(pet)
-    return pet
+
+    body = PetResponse.model_validate(pet).model_dump(mode="json")
+    if idempotency_key:
+        store_response(
+            db,
+            user_id=user.id,
+            key=idempotency_key,
+            endpoint=ENDPOINT_CREATE,
+            payload=payload_data,
+            status_code=status.HTTP_201_CREATED,
+            body=body,
+        )
+    return body
 
 
 @router.get("/public/medical-card/{token}", response_model=PublicMedicalCard)

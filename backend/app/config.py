@@ -1,3 +1,4 @@
+import base64
 from functools import lru_cache
 
 from pydantic import model_validator
@@ -37,6 +38,10 @@ class Settings(BaseSettings):
     # чтобы демо работало без почтового провайдера. В prod запрещено валидатором.
     expose_dev_otp: bool = False
 
+    # Ключ шифрования медицинских текстов (AES-256-GCM), 32 байта в base64.
+    # В prod обязателен; в dev выводится из jwt_secret.
+    medical_encryption_key: str | None = None
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @model_validator(mode="after")
@@ -48,6 +53,14 @@ class Settings(BaseSettings):
                 raise ValueError("JWT_SECRET в prod должен быть не короче 32 символов")
             if self.expose_dev_otp:
                 raise ValueError("EXPOSE_DEV_OTP недопустим в prod: код входа нельзя отдавать в ответе")
+            if not self.medical_encryption_key:
+                raise ValueError("MEDICAL_ENCRYPTION_KEY обязателен в prod: шифрование медицинских данных")
+            try:
+                key = base64.b64decode(self.medical_encryption_key)
+            except (ValueError, TypeError) as exc:
+                raise ValueError("MEDICAL_ENCRYPTION_KEY должен быть base64") from exc
+            if len(key) != 32:
+                raise ValueError("MEDICAL_ENCRYPTION_KEY должен быть 32 байта в base64")
         return self
 
     @property

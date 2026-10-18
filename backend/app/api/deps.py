@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import STATUS_ACTIVE, Pet, User
+from app.models import ROLE_PLATFORM_ADMIN, STATUS_ACTIVE, Pet, User
 from app.services.consents import missing_required_consents
 from app.services.security import TokenError, decode_access_token
 
@@ -77,3 +77,28 @@ def get_owned_pet(pet_id: int, user: User, db: Session) -> Pet:
     if pet is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pet not found")
     return pet
+
+
+def require_roles(*roles: str) -> Callable[[CurrentUser], User]:
+    """Фабрика зависимостей для ролевого доступа.
+
+    Роли клиник заведены заранее: кабинет клиники появится на следующем этапе,
+    но проверка прав уже работает и покрыта тестами.
+    """
+
+    def dependency(user: CurrentUser) -> User:
+        if user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "error": "role_required",
+                    "required": list(roles),
+                    "message": "Недостаточно прав",
+                },
+            )
+        return user
+
+    return dependency
+
+
+PlatformAdmin = Annotated[User, Depends(require_roles(ROLE_PLATFORM_ADMIN))]

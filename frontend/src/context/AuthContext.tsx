@@ -21,6 +21,7 @@ type AuthContextValue = {
   changePassword: (currentPassword: string | null, newPassword: string) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<{ expires_in: number; dev_code?: string | null }>;
   confirmPasswordReset: (email: string, code: string, newPassword: string) => Promise<void>;
+  acceptConsents: (consents: ConsentRequirement[]) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -146,6 +147,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [storeSession],
   );
 
+  const acceptConsents = useCallback(async (consents: ConsentRequirement[]) => {
+    const updated = await api<User>("/auth/consents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ consents }),
+    });
+    setUser(updated);
+  }, []);
+
   const logout = useCallback(async () => {
     const refreshToken = getRefreshToken();
     if (refreshToken) {
@@ -171,6 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       changePassword,
       requestPasswordReset,
       confirmPasswordReset,
+      acceptConsents,
       logout,
     }),
     [
@@ -184,6 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       changePassword,
       requestPasswordReset,
       confirmPasswordReset,
+      acceptConsents,
       logout,
     ],
   );
