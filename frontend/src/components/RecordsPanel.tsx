@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { usePets } from "../context/PetContext";
 import { api } from "../lib/api";
+import { track } from "../lib/analytics";
+import { loadRecordsCache, saveRecordsCache } from "../lib/offlineCache";
 import { SkeletonLines } from "./Skeleton";
 import { useToast } from "./Toast";
 import type { MedicalRecord, RecordKind } from "../lib/types";
@@ -19,6 +21,7 @@ export function RecordsPanel() {
   const { show } = useToast();
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [offlineAt, setOfflineAt] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [kind, setKind] = useState<RecordKind>("visit");
@@ -32,10 +35,20 @@ export function RecordsPanel() {
   const load = async (petId: number) => {
     setLoading(true);
     setError("");
+    setOfflineAt(null);
     try {
-      setRecords(await api<MedicalRecord[]>(`/pets/${petId}/records`));
+      const fresh = await api<MedicalRecord[]>(`/pets/${petId}/records`);
+      setRecords(fresh);
+      // Кэш нужен, чтобы карта открывалась без сети; на диске лежит только шифртекст.
+      await saveRecordsCache(petId, fresh).catch(() => undefined);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось загрузить медкарту.");
+      const cached = await loadRecordsCache<MedicalRecord[]>(petId).catch(() => null);
+      if (cached) {
+        setRecords(cached.records);
+        setOfflineAt(cached.updatedAt);
+      } else {
+        setError(caught instanceof Error ? caught.message : "Не удалось загрузить медкарту.");
+      }
     } finally {
       setLoading(false);
     }
@@ -75,6 +88,7 @@ export function RecordsPanel() {
       setFormOpen(false);
       await load(pet.id);
       show("Запись добавлена в медкарту");
+      track("record_created", `/app/smart-id`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось сохранить запись.");
     } finally {
@@ -172,6 +186,12 @@ export function RecordsPanel() {
         </form>
       )}
 
+      {offlineAt && (
+        <p className="offline-note" role="status">
+          Офлайн-режим: показаны данные из кэша на устройстве от{" "}
+          {new Date(offlineAt).toLocaleString("ru-RU")}. Новые записи появятся после восстановления связи.
+        </p>
+      )}
       {error && <p className="form-error" role="alert">{error}</p>}
       {loading && <SkeletonLines />}
 

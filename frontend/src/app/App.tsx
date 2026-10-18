@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { RequireAuth } from "../components/RequireAuth";
 import { AccessCardPage } from "../pages/AccessCardPage";
@@ -14,10 +15,21 @@ import { PlusPage } from "../pages/PlusPage";
 import { ResetPasswordPage } from "../pages/ResetPasswordPage";
 import { SmartIdPage } from "../pages/SmartIdPage";
 import { SettingsPage } from "../pages/SettingsPage";
+import { track } from "../lib/analytics";
+
+function PageTracking() {
+  const location = useLocation();
+  useEffect(() => {
+    track("page_view", location.pathname);
+  }, [location.pathname]);
+  return null;
+}
 
 export function App() {
   return (
-    <Routes>
+    <>
+      <PageTracking />
+      <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -35,6 +47,7 @@ export function App() {
         <Route path="/medical/:token" element={<MedicalCardPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
-    </Routes>
+      </Routes>
+    </>
   );
 }

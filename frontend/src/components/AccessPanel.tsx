@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy, Link2, ShieldOff } from "lucide-react";
 import { usePets } from "../context/PetContext";
 import { api } from "../lib/api";
+import { track } from "../lib/analytics";
 import type { AccessGrant, AccessGrantCreated } from "../lib/types";
 
 const SCOPE_LABELS: Record<string, string> = {
@@ -59,6 +60,7 @@ export function AccessPanel() {
       setCopied(false);
       setLabel("");
       await load(pet.id);
+      track("access_granted", "/app/smart-id");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось выдать доступ.");
     } finally {
@@ -71,6 +73,7 @@ export function AccessPanel() {
     try {
       await api(`/access-grants/${grantId}/revoke`, { method: "POST" });
       await load(pet.id);
+      track("access_revoked", "/app/smart-id");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось отозвать доступ.");
     }

@@ -8,6 +8,8 @@ import {
   setTokens,
   type TokenPair,
 } from "../lib/api";
+import { resetAnalyticsQueue } from "../lib/analytics";
+import { clearOfflineCache } from "../lib/offlineCache";
 import type { ConsentRequirement, User } from "../lib/types";
 
 type AuthContextValue = {
@@ -166,6 +168,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }).catch(() => undefined);
     }
     clearTokens();
+    resetAnalyticsQueue();
+    // Медицинские данные на устройстве не должны пережить выход из аккаунта.
+    await clearOfflineCache().catch(() => undefined);
     setUser(null);
   }, []);
 

@@ -3,6 +3,7 @@ import { Send, Trash2 } from "lucide-react";
 import { PetSwitcher } from "../components/PetSwitcher";
 import { usePets } from "../context/PetContext";
 import { api, authorizedFetch } from "../lib/api";
+import { track } from "../lib/analytics";
 import type { ChatHistoryItem } from "../lib/types";
 
 type ChatMessage = { role: "user" | "assistant"; text: string };
@@ -44,6 +45,7 @@ export function ChatPage() {
     setLastPrompt(text);
     setError(null);
     setMessages(prev => [...prev, { role: "user", text }, { role: "assistant", text: "" }]);
+    track("chat_message_sent", "/app/chat");
     setLoading(true);
     const controller = new AbortController();
     abortRef.current = controller;

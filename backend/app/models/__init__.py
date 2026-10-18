@@ -1,3 +1,4 @@
+from app.models.analytics import AnalyticsEvent
 from app.models.auth import (
     CONSENT_PRIVACY,
     CONSENT_TERMS,
@@ -44,6 +45,7 @@ from app.models.medical import (
 
 __all__ = [
     "ACCESS_SCOPES",
+    "AnalyticsEvent",
     "APPOINTMENT_CANCELLED",
     "APPOINTMENT_CONFIRMED",
     "APPOINTMENT_REQUESTED",

@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.access import router as access_router
 from app.api.account import router as account_router
 from app.api.admin import router as admin_router
+from app.api.analytics import router as analytics_router
 from app.api.appointments import router as appointments_router
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
@@ -63,6 +64,7 @@ for router in (
     chat_router,
     payments_router,
     admin_router,
+    analytics_router,
 ):
     app.include_router(router, prefix=API_V1_PREFIX)
 

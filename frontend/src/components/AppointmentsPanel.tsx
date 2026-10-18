@@ -4,6 +4,7 @@ import { usePets } from "../context/PetContext";
 import { useToast } from "./Toast";
 import { SkeletonLines } from "./Skeleton";
 import { api } from "../lib/api";
+import { track } from "../lib/analytics";
 import type { Appointment } from "../lib/types";
 
 const STATUS_LABELS: Record<Appointment["status"], string> = {
@@ -71,6 +72,7 @@ export function AppointmentsPanel() {
       setSlot(defaultSlot());
       await load(pet.id);
       show("Заявка отправлена клинике");
+      track("appointment_requested", "/app/smart-id");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось отправить заявку.");
     } finally {
@@ -83,6 +85,7 @@ export function AppointmentsPanel() {
       await api(`/appointments/${appointmentId}/cancel`, { method: "POST" });
       await load(pet.id);
       show("Заявка отменена");
+      track("appointment_cancelled", "/app/smart-id");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось отменить заявку.");
     }
