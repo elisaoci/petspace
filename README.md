@@ -8,8 +8,8 @@
 - Авторизация: вход по одноразовому коду на email, JWT access + refresh с ротацией
 - ИИ: Ollama на хосте (по умолчанию модель `qwen2.5:3b`), ответы стримятся по SSE
 
-Страницы: `/` главная, `/login` вход, `/app` кабинет, `/app/pet`, `/app/calendar`, `/app/chat`,
-`/plus`, `/medical/:token`.
+Страницы: `/` главная, `/login` вход и регистрация, `/reset-password` восстановление пароля,
+`/app` кабинет, `/app/pet`, `/app/calendar`, `/app/chat`, `/app/settings`, `/plus`, `/medical/:token`.
 
 ## Быстрый старт (Docker Compose)
 
@@ -172,7 +172,7 @@ refresh-токенов, обнаружение повторного исполь
 ## Авторизация
 
 Два способа входа для владельца: **пароль** (основной) и **одноразовый код на email** (запасной,
-он же основа для будущего восстановления пароля).
+он же используется для восстановления пароля).
 
 1. **Регистрация** — `POST /api/v1/auth/register` с `{"email", "password", "consents"}`.
    Пароль от 8 символов, согласия обязательны: без них аккаунт не создаётся (ответ `422`
@@ -185,7 +185,16 @@ refresh-токенов, обнаружение повторного исполь
 3. **Вход по коду** — `POST /api/v1/auth/otp/request` (код из 6 цифр, 5 минут, не больше 3 запросов
    в час) и `POST /api/v1/auth/otp/verify`. Код создаёт сессию только для существующего аккаунта:
    регистрация здесь невозможна, неизвестный адрес получает `404 user_not_found`.
-4. Дальше access-токен идёт в заголовке `Authorization: Bearer <token>`.
+4. **Смена пароля** — `POST /api/v1/auth/password` с `{"current_password", "new_password"}`.
+   Текущий пароль обязателен, если он уже задан (аккаунты, созданные до появления паролей, могут
+   сразу установить пароль). После смены отзываются **все** refresh-токены, поэтому чужие сессии
+   смену пароля не переживут; текущий клиент получает новую пару. Экран — `/app/settings`.
+5. **Восстановление пароля** — два шага: `POST /api/v1/auth/password/reset/request` с `{"email"}`
+   (всегда `202`, ответ не раскрывает, существует ли аккаунт) и
+   `POST /api/v1/auth/password/reset/confirm` с `{"email", "code", "new_password"}`.
+   Код сброса имеет отдельное назначение и не открывает сессию, а после сброса все сессии отзываются.
+   Экран — `/reset-password`.
+6. Дальше access-токен идёт в заголовке `Authorization: Bearer <token>`.
 
 Особенности реализации:
 
@@ -258,6 +267,9 @@ backend всегда ходит на `db:5432`.
 | POST | `/api/v1/auth/login` | вход по email и паролю |
 | POST | `/api/v1/auth/otp/request` | отправка кода входа на email |
 | POST | `/api/v1/auth/otp/verify` | вход по коду (только для существующего аккаунта) |
+| POST | `/api/v1/auth/password` | смена пароля (нужен текущий, отзывает другие сессии) |
+| POST | `/api/v1/auth/password/reset/request` | код для восстановления пароля |
+| POST | `/api/v1/auth/password/reset/confirm` | новый пароль по коду из письма |
 | POST | `/api/v1/auth/refresh` | ротация refresh-токена |
 | POST | `/api/v1/auth/logout` | отзыв refresh-токена |
 | GET | `/api/v1/auth/me` | текущий пользователь и статус согласий |
@@ -307,7 +319,8 @@ backend/
 frontend/
   public/           manifest, service worker, иконки PWA
   scripts/          генератор иконок
-  src/pages/        HomePage, LoginPage, DashboardPage, PetPage, CalendarPage, ChatPage, PlusPage, MedicalCardPage
+  src/pages/        HomePage, LoginPage, ResetPasswordPage, DashboardPage, PetPage,
+                    CalendarPage, ChatPage, SettingsPage, PlusPage, MedicalCardPage
   src/components/   Layout, PetSwitcher, DogIllustration, RequireAuth
   src/context/      AuthContext (сессия), PetContext (активный питомец)
   src/lib/          api.ts (токены и автообновление), types.ts, format.ts, registerServiceWorker.ts
@@ -341,7 +354,9 @@ docker compose -p petspace up -d --build frontend
 **Кабинет просит войти или API отвечает 401.** Это ожидаемо: без токена доступ закрыт.
 Войдите на `/login` своим email и паролем.
 
-**Пароль не подходит.** Восстановления пока нет: используйте «Войти по коду с почты».
+**Пароль не подходит.** Восстановите его на `/reset-password` по коду из письма или войдите
+по коду с почты. После смены пароля все прежние сессии завершаются — на других устройствах
+придётся войти заново.
 
 **Код входа не приходит на почту.** Почтовый провайдер ещё не подключён: `EMAIL_SENDER=console`
 печатает письмо в лог backend, а при `EXPOSE_DEV_OTP=true` код дополнительно виден на экране входа.

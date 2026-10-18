@@ -1,10 +1,12 @@
-"""Схемы авторизации владельца: вход по коду, токены, согласия."""
+"""Схемы авторизации владельца: вход по коду, пароли, токены, согласия."""
 
 import re
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+from app.services.passwords import password_error
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
 
@@ -63,10 +65,37 @@ class RegisterPayload(EmailPayload):
     @field_validator("password")
     @classmethod
     def _validate_password(cls, value: str) -> str:
-        if value.strip() != value:
-            raise ValueError("Пароль не должен начинаться или заканчиваться пробелом")
-        if len(set(value)) < 3:
-            raise ValueError("Слишком простой пароль")
+        problem = password_error(value)
+        if problem:
+            raise ValueError(problem)
+        return value
+
+
+class PasswordChangePayload(BaseModel):
+    # Текущий пароль нужен, только если он уже задан: аккаунты из ранних
+    # версий входят по коду и могут сразу установить пароль.
+    current_password: str | None = Field(default=None, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_new_password(cls, value: str) -> str:
+        problem = password_error(value)
+        if problem:
+            raise ValueError(problem)
+        return value
+
+
+class PasswordResetConfirmPayload(EmailPayload):
+    code: str = Field(min_length=4, max_length=8)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_new_password(cls, value: str) -> str:
+        problem = password_error(value)
+        if problem:
+            raise ValueError(problem)
         return value
 
 

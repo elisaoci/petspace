@@ -5,6 +5,7 @@ export type User = {
   role: string;
   status: string;
   consents_accepted: boolean;
+  has_password: boolean;
   created_at: string;
 };
 

@@ -23,6 +23,8 @@ from app.schemas.auth import (
     OtpRequestPayload,
     OtpRequestResponse,
     OtpVerifyPayload,
+    PasswordChangePayload,
+    PasswordResetConfirmPayload,
     RefreshPayload,
     RegisterPayload,
     TokenPairResponse,
@@ -45,6 +47,7 @@ from app.services.sessions import (
     REASON_REUSED,
     RefreshError,
     issue_token_pair,
+    revoke_all_user_tokens,
     revoke_refresh_token,
     rotate_refresh_token,
 )
@@ -53,6 +56,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 OTP_CHANNEL_EMAIL = "email"
 OTP_PURPOSE_LOGIN = "login"
+OTP_PURPOSE_PASSWORD_RESET = "password_reset"
 
 INVALID_CREDENTIALS = "Неверный email или пароль"
 
@@ -113,6 +117,128 @@ def _complete_login(
         expires_in=expires_in,
         user=_user_response(db, user),
     )
+
+
+def _issue_otp(
+    db: Session,
+    *,
+    destination: str,
+    purpose: str,
+    request: Request,
+    settings: Settings,
+    audit_action: str,
+) -> str:
+    """Создаёт одноразовый код, отправляет письмо и возвращает код (нужен dev-режиму)."""
+    now = datetime.now(UTC)
+    recent_requests = db.scalar(
+        select(func.count())
+        .select_from(OtpCode)
+        .where(
+            OtpCode.destination == destination,
+            OtpCode.created_at >= now - timedelta(hours=1),
+        )
+    )
+    if (recent_requests or 0) >= settings.otp_max_requests_per_hour:
+        record_audit(
+            db,
+            action=f"{audit_action}.rate_limited",
+            entity="otp",
+            request=request,
+            details={"destination": destination, "purpose": purpose},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Слишком много запросов кода. Попробуйте через час.",
+        )
+
+    code = generate_otp_code()
+    db.add(
+        OtpCode(
+            channel=OTP_CHANNEL_EMAIL,
+            destination=destination,
+            purpose=purpose,
+            code_hash=hash_otp(code, settings.jwt_secret),
+            expires_at=now + timedelta(minutes=settings.otp_ttl_minutes),
+            request_ip=client_ip(request),
+        )
+    )
+    db.commit()
+
+    subject, text = build_otp_message(code, settings.otp_ttl_minutes)
+    get_email_sender().send(destination, subject, text)
+    record_audit(
+        db,
+        action=audit_action,
+        entity="otp",
+        request=request,
+        details={"destination": destination, "purpose": purpose},
+    )
+    return code
+
+
+def _consume_otp(
+    db: Session,
+    *,
+    destination: str,
+    purpose: str,
+    code: str,
+    request: Request,
+    settings: Settings,
+) -> None:
+    """Проверяет код и помечает его использованным. При ошибке — HTTPException и запись в аудит."""
+    now = datetime.now(UTC)
+    otp = db.scalar(
+        select(OtpCode)
+        .where(
+            OtpCode.destination == destination,
+            OtpCode.purpose == purpose,
+            OtpCode.consumed_at.is_(None),
+        )
+        .order_by(OtpCode.id.desc())
+    )
+    if otp is None or otp.expires_at <= now:
+        record_audit(
+            db,
+            action="otp.verify.failure",
+            entity="otp",
+            request=request,
+            details={"destination": destination, "purpose": purpose, "reason": "no_active_code"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Код не найден или истёк, запросите новый",
+        )
+
+    if otp.attempts >= settings.otp_max_attempts:
+        record_audit(
+            db,
+            action="otp.verify.failure",
+            entity="otp",
+            request=request,
+            details={"destination": destination, "purpose": purpose, "reason": "too_many_attempts"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Слишком много попыток, запросите новый код",
+        )
+
+    if not codes_equal(otp.code_hash, hash_otp(code.strip(), settings.jwt_secret)):
+        otp.attempts += 1
+        record_audit(
+            db,
+            action="otp.verify.failure",
+            entity="otp",
+            request=request,
+            details={
+                "destination": destination,
+                "purpose": purpose,
+                "reason": "wrong_code",
+                "attempts": otp.attempts,
+            },
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный код")
+
+    otp.consumed_at = now
 
 
 @router.post("/register", response_model=TokenPairResponse, status_code=status.HTTP_201_CREATED)
@@ -250,46 +376,14 @@ def request_otp(payload: OtpRequestPayload, request: Request, db: DbSession) -> 
     """Отправляет код входа. Ответ одинаковый для существующих и неизвестных адресов:
     иначе по ответу API можно было бы узнать, есть ли у человека аккаунт."""
     settings = get_settings()
-    now = datetime.now(UTC)
-    destination = payload.email
-
-    recent_requests = db.scalar(
-        select(func.count())
-        .select_from(OtpCode)
-        .where(
-            OtpCode.destination == destination,
-            OtpCode.created_at >= now - timedelta(hours=1),
-        )
+    code = _issue_otp(
+        db,
+        destination=payload.email,
+        purpose=OTP_PURPOSE_LOGIN,
+        request=request,
+        settings=settings,
+        audit_action="otp.request",
     )
-    if (recent_requests or 0) >= settings.otp_max_requests_per_hour:
-        record_audit(
-            db,
-            action="otp.request.rate_limited",
-            entity="otp",
-            request=request,
-            details={"destination": destination},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Слишком много запросов кода. Попробуйте через час.",
-        )
-
-    code = generate_otp_code()
-    db.add(
-        OtpCode(
-            channel=OTP_CHANNEL_EMAIL,
-            destination=destination,
-            purpose=OTP_PURPOSE_LOGIN,
-            code_hash=hash_otp(code, settings.jwt_secret),
-            expires_at=now + timedelta(minutes=settings.otp_ttl_minutes),
-            request_ip=client_ip(request),
-        )
-    )
-    db.commit()
-
-    subject, text = build_otp_message(code, settings.otp_ttl_minutes)
-    get_email_sender().send(destination, subject, text)
-    record_audit(db, action="otp.request", entity="otp", request=request, details={"destination": destination})
 
     return OtpRequestResponse(
         message="Если адрес указан верно, код отправлен",
@@ -310,48 +404,14 @@ def verify_otp(payload: OtpVerifyPayload, request: Request, db: DbSession) -> To
     now = datetime.now(UTC)
     destination = payload.email
 
-    otp = db.scalar(
-        select(OtpCode)
-        .where(
-            OtpCode.destination == destination,
-            OtpCode.purpose == OTP_PURPOSE_LOGIN,
-            OtpCode.consumed_at.is_(None),
-        )
-        .order_by(OtpCode.id.desc())
+    _consume_otp(
+        db,
+        destination=destination,
+        purpose=OTP_PURPOSE_LOGIN,
+        code=payload.code,
+        request=request,
+        settings=settings,
     )
-    if otp is None or otp.expires_at <= now:
-        record_audit(
-            db,
-            action="otp.verify.failure",
-            entity="otp",
-            request=request,
-            details={"destination": destination, "reason": "no_active_code"},
-        )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Код не найден или истёк, запросите новый")
-
-    if otp.attempts >= settings.otp_max_attempts:
-        record_audit(
-            db,
-            action="otp.verify.failure",
-            entity="otp",
-            request=request,
-            details={"destination": destination, "reason": "too_many_attempts"},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Слишком много попыток, запросите новый код",
-        )
-
-    if not codes_equal(otp.code_hash, hash_otp(payload.code.strip(), settings.jwt_secret)):
-        otp.attempts += 1
-        record_audit(
-            db,
-            action="otp.verify.failure",
-            entity="otp",
-            request=request,
-            details={"destination": destination, "reason": "wrong_code", "attempts": otp.attempts},
-        )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный код")
 
     user = db.scalar(select(User).where(User.email == destination))
     if user is None:
@@ -369,10 +429,160 @@ def verify_otp(payload: OtpVerifyPayload, request: Request, db: DbSession) -> To
     if user.status != STATUS_ACTIVE:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_CREDENTIALS)
 
-    otp.consumed_at = now
     user.email_verified_at = user.email_verified_at or now
     user.last_login_at = now
     return _complete_login(db, user, request, settings, action="auth.login.code")
+
+
+@router.post("/password", response_model=TokenPairResponse)
+def change_password(
+    payload: PasswordChangePayload, request: Request, user: CurrentUser, db: DbSession
+) -> TokenPairResponse:
+    """Смена пароля из кабинета.
+
+    Текущий пароль обязателен, если он уже задан. После смены отзываются все
+    refresh-токены, поэтому чужие сессии смену пароля не переживут; текущий клиент
+    получает новую пару и продолжает работу.
+    """
+    settings = get_settings()
+
+    if user.password_hash is not None:
+        if not payload.current_password:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"error": "current_password_required", "message": "Укажите текущий пароль"},
+            )
+        if not verify_password(payload.current_password, user.password_hash):
+            record_audit(
+                db,
+                action="password.change.failure",
+                actor_user_id=user.id,
+                entity="user",
+                entity_id=user.id,
+                request=request,
+                details={"reason": "wrong_current_password"},
+            )
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Текущий пароль неверен")
+        if verify_password(payload.new_password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": "password_reused", "message": "Новый пароль совпадает с текущим"},
+            )
+
+    user.password_hash = hash_password(payload.new_password, settings.password_iterations)
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    revoke_all_user_tokens(db, user.id)
+
+    access_token, refresh_token, expires_in = issue_token_pair(
+        db,
+        user,
+        settings,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    db.commit()
+    record_audit(
+        db,
+        action="password.changed",
+        actor_user_id=user.id,
+        entity="user",
+        entity_id=user.id,
+        request=request,
+        details={"other_sessions_revoked": True},
+    )
+    return TokenPairResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
+        user=_user_response(db, user),
+    )
+
+
+@router.post(
+    "/password/reset/request",
+    response_model=OtpRequestResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def request_password_reset(payload: OtpRequestPayload, request: Request, db: DbSession) -> OtpRequestResponse:
+    """Код для сброса пароля. Существование аккаунта не раскрываем и на чужие адреса не пишем."""
+    settings = get_settings()
+    user = db.scalar(select(User).where(User.email == payload.email))
+
+    code: str | None = None
+    if user is not None and user.status == STATUS_ACTIVE:
+        code = _issue_otp(
+            db,
+            destination=payload.email,
+            purpose=OTP_PURPOSE_PASSWORD_RESET,
+            request=request,
+            settings=settings,
+            audit_action="password.reset.request",
+        )
+    else:
+        record_audit(
+            db,
+            action="password.reset.request",
+            entity="user",
+            request=request,
+            details={"destination": payload.email, "result": "no_active_account"},
+        )
+
+    return OtpRequestResponse(
+        message="Если аккаунт существует, код отправлен",
+        expires_in=settings.otp_ttl_minutes * 60,
+        dev_code=code if (code is not None and settings.expose_dev_otp) else None,
+    )
+
+
+@router.post("/password/reset/confirm", response_model=TokenPairResponse)
+def confirm_password_reset(
+    payload: PasswordResetConfirmPayload, request: Request, db: DbSession
+) -> TokenPairResponse:
+    """Установка нового пароля по коду из письма. Все прежние сессии отзываются."""
+    settings = get_settings()
+
+    _consume_otp(
+        db,
+        destination=payload.email,
+        purpose=OTP_PURPOSE_PASSWORD_RESET,
+        code=payload.code,
+        request=request,
+        settings=settings,
+    )
+
+    user = db.scalar(select(User).where(User.email == payload.email))
+    if user is None or user.status != STATUS_ACTIVE:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=INVALID_CREDENTIALS)
+
+    user.password_hash = hash_password(payload.new_password, settings.password_iterations)
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    user.email_verified_at = user.email_verified_at or datetime.now(UTC)
+    revoke_all_user_tokens(db, user.id)
+
+    access_token, refresh_token, expires_in = issue_token_pair(
+        db,
+        user,
+        settings,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
+    db.commit()
+    record_audit(
+        db,
+        action="password.reset.completed",
+        actor_user_id=user.id,
+        entity="user",
+        entity_id=user.id,
+        request=request,
+    )
+    return TokenPairResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=expires_in,
+        user=_user_response(db, user),
+    )
 
 
 @router.post("/refresh", response_model=TokenPairResponse)

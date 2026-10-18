@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ArrowRight, KeyRound, LogIn, Mail, ShieldCheck, UserPlus } from "lucide-react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError } from "../lib/api";
 
@@ -293,9 +293,12 @@ export function LoginPage() {
 
         <div className="auth-switch">
           {mode !== "code" ? (
-            <button type="button" className="link-button" onClick={() => reset("code")}>
-              <Mail size={14} /> Войти по коду с почты
-            </button>
+            <>
+              <button type="button" className="link-button" onClick={() => reset("code")}>
+                <Mail size={14} /> Войти по коду с почты
+              </button>
+              <Link className="link-button" to="/reset-password">Забыли пароль?</Link>
+            </>
           ) : (
             <button type="button" className="link-button" onClick={() => reset("login")}>
               Вернуться к входу по паролю

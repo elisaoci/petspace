@@ -9,6 +9,7 @@ const links = [
   { to: "/app/pet", label: "Питомец", end: false },
   { to: "/app/calendar", label: "Календарь", end: false },
   { to: "/app/chat", label: "ИИ-помощник", end: false },
+  { to: "/app/settings", label: "Настройки", end: false },
   { to: "/plus", label: "Plus", end: false },
 ];
 

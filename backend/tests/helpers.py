@@ -77,5 +77,21 @@ def verify_code(client: TestClient, email: str, code: str) -> dict:
     return {"status_code": response.status_code, "body": _body(response)}
 
 
+def request_reset_code(client: TestClient, email: str = DEFAULT_EMAIL) -> str:
+    response = client.post(f"{API_V1}/auth/password/reset/request", json={"email": email})
+    assert response.status_code == 202, response.text
+    code = response.json()["dev_code"]
+    assert code, "в тестовом окружении код сброса должен возвращаться"
+    return code
+
+
+def confirm_password_reset(client: TestClient, email: str, code: str, password: str) -> dict:
+    response = client.post(
+        f"{API_V1}/auth/password/reset/confirm",
+        json={"email": email, "code": code, "new_password": password},
+    )
+    return {"status_code": response.status_code, "body": _body(response)}
+
+
 def auth_headers(tokens: dict) -> dict:
     return {"Authorization": f"Bearer {tokens['access_token']}"}

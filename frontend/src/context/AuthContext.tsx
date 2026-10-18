@@ -18,6 +18,9 @@ type AuthContextValue = {
   loginWithPassword: (email: string, password: string) => Promise<void>;
   requestCode: (email: string) => Promise<{ expires_in: number; dev_code?: string | null }>;
   verifyCode: (email: string, code: string) => Promise<void>;
+  changePassword: (currentPassword: string | null, newPassword: string) => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<{ expires_in: number; dev_code?: string | null }>;
+  confirmPasswordReset: (email: string, code: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -111,6 +114,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [storeSession],
   );
 
+  const changePassword = useCallback(
+    async (currentPassword: string | null, newPassword: string) => {
+      const tokens = await api<TokenPair & { user: User }>("/auth/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      });
+      storeSession(tokens);
+    },
+    [storeSession],
+  );
+
+  const requestPasswordReset = useCallback(async (email: string) => {
+    return api<{ expires_in: number; dev_code?: string | null; message: string }>("/auth/password/reset/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+  }, []);
+
+  const confirmPasswordReset = useCallback(
+    async (email: string, code: string, newPassword: string) => {
+      const tokens = await api<TokenPair & { user: User }>("/auth/password/reset/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code, new_password: newPassword }),
+      });
+      storeSession(tokens);
+    },
+    [storeSession],
+  );
+
   const logout = useCallback(async () => {
     const refreshToken = getRefreshToken();
     if (refreshToken) {
@@ -125,8 +160,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, consentRequirements, register, loginWithPassword, requestCode, verifyCode, logout }),
-    [user, loading, consentRequirements, register, loginWithPassword, requestCode, verifyCode, logout],
+    () => ({
+      user,
+      loading,
+      consentRequirements,
+      register,
+      loginWithPassword,
+      requestCode,
+      verifyCode,
+      changePassword,
+      requestPasswordReset,
+      confirmPasswordReset,
+      logout,
+    }),
+    [
+      user,
+      loading,
+      consentRequirements,
+      register,
+      loginWithPassword,
+      requestCode,
+      verifyCode,
+      changePassword,
+      requestPasswordReset,
+      confirmPasswordReset,
+      logout,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
