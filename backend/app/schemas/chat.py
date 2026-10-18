@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -12,3 +14,12 @@ class ChatMessageResponse(BaseModel):
     role: str
     content: str
     created_at: str
+
+
+class ChatFeedbackRequest(BaseModel):
+    value: Literal["useful", "not_useful"]
+
+
+class ChatFeedbackResponse(BaseModel):
+    id: int
+    feedback: str

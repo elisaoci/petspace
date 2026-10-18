@@ -1,17 +1,22 @@
 import { useState } from "react";
-import { KeyRound, ShieldCheck } from "lucide-react";
-import { Link } from "react-router-dom";
+import { KeyRound, ShieldCheck, Trash2 } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { ApiError } from "../lib/api";
+import { ApiError, api } from "../lib/api";
 
 export function SettingsPage() {
-  const { user, changePassword } = useAuth();
+  const { user, changePassword, logout } = useAuth();
+  const navigate = useNavigate();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [repeat, setRepeat] = useState("");
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const passwordSet = user?.has_password ?? false;
 
@@ -38,6 +43,26 @@ export function SettingsPage() {
       setError(passwordError(caught));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const deleteAccount = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!deleteConfirm || deleting) return;
+    setDeleteError("");
+    setDeleting(true);
+    try {
+      await api("/account/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: true, password: deletePassword || null }),
+      });
+      await logout();
+      navigate("/", { replace: true });
+    } catch (caught) {
+      setDeleteError(caught instanceof ApiError ? caught.message : "Не удалось удалить аккаунт.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -116,6 +141,47 @@ export function SettingsPage() {
 
           {error && <p className="form-error" role="alert">{error}</p>}
           {done && <p className="muted" role="status"><ShieldCheck size={14} /> {done}</p>}
+        </form>
+      </section>
+
+      <section className="card form-layout">
+        <div>
+          <span className="card-kicker">Удаление данных</span>
+          <h3>Удалить аккаунт</h3>
+          <p className="muted">
+            Удаляются аккаунт, все питомцы, медкарта с историей, события календаря, переписка с ИИ
+            и выданные доступы. Действие необратимо. В журнале остаётся только факт удаления — без
+            персональных данных (152-ФЗ).
+          </p>
+        </div>
+
+        <form onSubmit={deleteAccount}>
+          {passwordSet && (
+            <>
+              <label className="soft-label" htmlFor="delete-password">Пароль</label>
+              <input
+                className="text-input"
+                id="delete-password"
+                type="password"
+                autoComplete="current-password"
+                value={deletePassword}
+                onChange={event => setDeletePassword(event.target.value)}
+                required
+              />
+            </>
+          )}
+          <label className="consent-item">
+            <input
+              type="checkbox"
+              checked={deleteConfirm}
+              onChange={event => setDeleteConfirm(event.target.checked)}
+            />
+            <span>Понимаю, что данные удалятся безвозвратно</span>
+          </label>
+          <button className="button secondary full-button danger" type="submit" disabled={!deleteConfirm || deleting}>
+            <Trash2 size={16} /> {deleting ? "Удаляем…" : "Удалить аккаунт"}
+          </button>
+          {deleteError && <p className="form-error" role="alert">{deleteError}</p>}
         </form>
       </section>
     </main>

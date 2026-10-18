@@ -45,6 +45,17 @@ export type ChatHistoryItem = {
   role: "user" | "assistant" | "system";
   content: string;
   created_at: string;
+  feedback?: "useful" | "not_useful" | null;
+};
+
+export type Reminder = {
+  event_id: number;
+  pet_id: number;
+  pet_name: string;
+  title: string;
+  event_type: string;
+  starts_at: string;
+  status: "overdue" | "today" | "soon";
 };
 
 export type PublicMedicalCard = {

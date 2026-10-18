@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.access import router as access_router
+from app.api.account import router as account_router
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
@@ -12,6 +13,7 @@ from app.api.health import router as health_router
 from app.api.payments import router as payments_router
 from app.api.pets import router as pets_router
 from app.api.records import router as records_router
+from app.api.reminders import router as reminders_router
 from app.config import get_settings
 
 API_V1_PREFIX = "/api/v1"
@@ -50,10 +52,12 @@ app.include_router(health_router, prefix=API_V1_PREFIX)
 
 for router in (
     auth_router,
+    account_router,
     pets_router,
     events_router,
     records_router,
     access_router,
+    reminders_router,
     chat_router,
     payments_router,
     admin_router,

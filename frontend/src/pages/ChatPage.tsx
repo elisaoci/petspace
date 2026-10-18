@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Trash2 } from "lucide-react";
+import { Send, ThumbsDown, ThumbsUp, Trash2 } from "lucide-react";
 import { PetSwitcher } from "../components/PetSwitcher";
 import { usePets } from "../context/PetContext";
 import { api, authorizedFetch } from "../lib/api";
 import type { ChatHistoryItem } from "../lib/types";
 
-type ChatMessage = { role: "user" | "assistant"; text: string };
+type ChatMessage = {
+  role: "user" | "assistant";
+  text: string;
+  id?: number;
+  feedback?: "useful" | "not_useful" | null;
+};
 
 export function ChatPage() {
   const { pet } = usePets();
@@ -22,7 +27,12 @@ export function ChatPage() {
       .then(history => {
         const restored = history
           .filter(item => item.role === "user" || item.role === "assistant")
-          .map(item => ({ role: item.role as "user" | "assistant", text: item.content }));
+          .map(item => ({
+            role: item.role as "user" | "assistant",
+            text: item.content,
+            id: item.id,
+            feedback: item.feedback ?? null,
+          }));
         setMessages(restored.length ? restored : [{
           role: "assistant",
           text: `Привет! Я помогу разобраться с уходом, кормлением и самочувствием ${pet.name}. Что вас интересует?`,
@@ -91,6 +101,38 @@ export function ChatPage() {
     } finally {
       abortRef.current = null;
       setLoading(false);
+      // Перечитываем историю: сервер знает id ответа, он нужен для оценки полезности.
+      refreshHistory().catch(() => undefined);
+    }
+  };
+
+  const refreshHistory = async () => {
+    if (!pet) return;
+    const history = await api<ChatHistoryItem[]>(`/chat/history/pet-${pet.id}`);
+    const restored = history
+      .filter(item => item.role === "user" || item.role === "assistant")
+      .map(item => ({
+        role: item.role as "user" | "assistant",
+        text: item.content,
+        id: item.id,
+        feedback: item.feedback ?? null,
+      }));
+    if (restored.length) setMessages(restored);
+  };
+
+  const rateAnswer = async (message: ChatMessage, value: "useful" | "not_useful") => {
+    if (!message.id) return;
+    try {
+      await api(`/chat/messages/${message.id}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value }),
+      });
+      setMessages(current =>
+        current.map(item => (item.id === message.id ? { ...item, feedback: value } : item)),
+      );
+    } catch {
+      setError("Не удалось сохранить оценку. Попробуйте ещё раз.");
     }
   };
 
@@ -140,6 +182,26 @@ export function ChatPage() {
           {messages.map((message, index) => (
             <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
               <span>{message.text || " "}</span>
+              {message.role === "assistant" && message.id && message.text && (
+                <div className="message-feedback">
+                  <button
+                    type="button"
+                    aria-label="Полезный ответ"
+                    className={message.feedback === "useful" ? "active" : ""}
+                    onClick={() => void rateAnswer(message, "useful")}
+                  >
+                    <ThumbsUp size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Бесполезный ответ"
+                    className={message.feedback === "not_useful" ? "active" : ""}
+                    onClick={() => void rateAnswer(message, "not_useful")}
+                  >
+                    <ThumbsDown size={14} />
+                  </button>
+                </div>
+              )}
             </div>
           ))}
           {loading && <div className="typing">Печатает…</div>}

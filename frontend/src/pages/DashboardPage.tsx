@@ -1,12 +1,26 @@
-import { ArrowUpRight, Bell, CalendarDays, Clock3, Heart, MessageCircle, Plus, Scale, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, ArrowUpRight, Bell, CalendarDays, Clock3, Heart, MessageCircle, Plus, Scale, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { DogIllustration } from "../components/DogIllustration";
 import { PetSwitcher } from "../components/PetSwitcher";
 import { usePets } from "../context/PetContext";
+import { api } from "../lib/api";
 import { formatAge, formatDate, statusLabel } from "../lib/format";
+import type { Reminder } from "../lib/types";
 
 export function DashboardPage() {
   const { pet, events } = usePets();
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+
+  useEffect(() => {
+    if (!pet) {
+      setReminders([]);
+      return;
+    }
+    api<Reminder[]>("/reminders?days=3")
+      .then(setReminders)
+      .catch(() => setReminders([]));
+  }, [pet?.id, events.length]);
   const nextEvent = [...events].sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())[0];
   const todayLabel = new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
 
@@ -36,6 +50,21 @@ export function DashboardPage() {
         </div>
         <PetSwitcher />
       </div>
+      {reminders.length > 0 && (
+        <section className="reminder-bar" aria-label="Напоминания">
+          <span className="reminder-icon"><AlertTriangle size={16} /></span>
+          <div className="reminder-items">
+            {reminders.slice(0, 3).map(reminder => (
+              <span className={`reminder-item ${reminder.status}`} key={reminder.event_id}>
+                <strong>{reminder.title}</strong> · {reminder.pet_name} ·{" "}
+                {reminder.status === "overdue" ? "просрочено" : formatDate(reminder.starts_at)}
+              </span>
+            ))}
+          </div>
+          <Link className="link-button" to="/app/calendar">Календарь</Link>
+        </section>
+      )}
+
       <section className="bento-grid dashboard-grid" aria-label="Обзор питомца">
         <article className="card hero-card">
           <div className="hero-copy">

@@ -50,6 +50,8 @@ class ChatMessage(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     # Переписка с ИИ содержит описание симптомов — тоже медицинские данные.
     content: Mapped[str] = mapped_column(EncryptedText, nullable=False)
+    # Оценка владельца: useful / not_useful. Нужна для разбора качества ответов.
+    feedback: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     pet: Mapped[Pet | None] = relationship(back_populates="messages")
 
