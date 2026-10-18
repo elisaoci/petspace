@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.access import router as access_router
 from app.api.account import router as account_router
 from app.api.admin import router as admin_router
+from app.api.appointments import router as appointments_router
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
 from app.api.errors import install_error_handlers
@@ -57,6 +58,7 @@ for router in (
     events_router,
     records_router,
     access_router,
+    appointments_router,
     reminders_router,
     chat_router,
     payments_router,

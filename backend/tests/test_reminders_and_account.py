@@ -1,4 +1,4 @@
-"""Оценка ответов ИИ, напоминания в приложении и удаление аккаунта."""
+"""Напоминания в приложении и удаление аккаунта."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -32,66 +32,6 @@ def _ask_ai(client: TestClient, pet_id: int, message: str = "Сколько ко
         f"{API_V1}/chat/stream",
         json={"message": message, "conversation_id": "feedback-test", "pet_id": pet_id},
     )
-
-
-# --- Оценка ответов ИИ -----------------------------------------------------
-
-
-def test_feedback_on_assistant_message(client: TestClient, pet: dict, db: Session, monkeypatch) -> None:
-    from app.config import get_settings
-
-    monkeypatch.setattr(get_settings(), "ollama_base_url", "http://127.0.0.1:9")
-    _ask_ai(client, pet["id"])
-
-    # Модели нет, поэтому в истории только сообщение владельца — создаём ответ вручную.
-    assistant = ChatMessage(
-        pet_id=pet["id"], conversation_id="feedback-test", role="assistant", content="Ответ ИИ"
-    )
-    db.add(assistant)
-    db.commit()
-
-    response = client.post(
-        f"{API_V1}/chat/messages/{assistant.id}/feedback", json={"value": "useful"}
-    )
-
-    assert response.status_code == 200, response.text
-    assert response.json()["feedback"] == "useful"
-    assert client.get(f"{API_V1}/chat/history/feedback-test").json()[-1]["feedback"] == "useful"
-
-    actions = [row.action for row in db.query(AuditLog).all()]
-    assert "chat.feedback" in actions
-
-
-def test_feedback_cannot_target_user_message(client: TestClient, pet: dict, db: Session) -> None:
-    message = ChatMessage(pet_id=pet["id"], conversation_id="c1", role="user", content="Вопрос")
-    db.add(message)
-    db.commit()
-
-    response = client.post(f"{API_V1}/chat/messages/{message.id}/feedback", json={"value": "useful"})
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "not_assistant_message"
-
-
-def test_feedback_value_is_validated(client: TestClient, pet: dict, db: Session) -> None:
-    message = ChatMessage(pet_id=pet["id"], conversation_id="c1", role="assistant", content="Ответ")
-    db.add(message)
-    db.commit()
-
-    response = client.post(f"{API_V1}/chat/messages/{message.id}/feedback", json={"value": "great"})
-
-    assert response.status_code == 422
-
-
-def test_stranger_cannot_rate_foreign_answer(client: TestClient, client_factory, pet: dict, db: Session) -> None:
-    message = ChatMessage(pet_id=pet["id"], conversation_id="c1", role="assistant", content="Ответ")
-    db.add(message)
-    db.commit()
-
-    other = client_factory()
-    register_owner(other, "stranger@example.com")
-
-    assert other.post(f"{API_V1}/chat/messages/{message.id}/feedback", json={"value": "useful"}).status_code == 404
 
 
 # --- Напоминания -----------------------------------------------------------

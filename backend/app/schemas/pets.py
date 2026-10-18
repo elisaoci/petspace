@@ -12,6 +12,8 @@ class PetBase(BaseModel):
     weight_kg: float | None = None
     height_cm: float | None = None
     owner_notes: str | None = None
+    allergies: str | None = None
+    chronic_conditions: str | None = None
 
 class PetCreate(PetBase): pass
 class PetUpdate(BaseModel):
@@ -23,6 +25,8 @@ class PetUpdate(BaseModel):
     weight_kg: float | None = None
     height_cm: float | None = None
     owner_notes: str | None = None
+    allergies: str | None = None
+    chronic_conditions: str | None = None
 
 class PetResponse(PetBase):
     model_config = ConfigDict(from_attributes=True)
@@ -46,5 +50,7 @@ class PublicMedicalCard(BaseModel):
     weight_kg: float | None
     height_cm: float | None
     photo_url: str | None
+    allergies: str | None = None
+    chronic_conditions: str | None = None
     age_years: int | None = None
     vaccinations: list[PublicVaccination] = Field(default_factory=list)

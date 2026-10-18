@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { usePets } from "../context/PetContext";
 import { api } from "../lib/api";
+import { SkeletonLines } from "./Skeleton";
+import { useToast } from "./Toast";
 import type { MedicalRecord, RecordKind } from "../lib/types";
 
 const KIND_LABELS: Record<RecordKind, string> = {
@@ -14,6 +16,7 @@ const KIND_LABELS: Record<RecordKind, string> = {
 
 export function RecordsPanel() {
   const { pet } = usePets();
+  const { show } = useToast();
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -71,6 +74,7 @@ export function RecordsPanel() {
       setDiagnosis("");
       setFormOpen(false);
       await load(pet.id);
+      show("Запись добавлена в медкарту");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось сохранить запись.");
     } finally {
@@ -83,6 +87,7 @@ export function RecordsPanel() {
     try {
       await api(`/records/${recordId}`, { method: "DELETE" });
       await load(pet.id);
+      show("Запись удалена");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось удалить запись.");
     }
@@ -168,7 +173,7 @@ export function RecordsPanel() {
       )}
 
       {error && <p className="form-error" role="alert">{error}</p>}
-      {loading && <p className="muted">Загружаем медкарту…</p>}
+      {loading && <SkeletonLines />}
 
       {!loading && records.length === 0 && (
         <p className="muted">Записей пока нет. Добавьте первый приём или прививку.</p>

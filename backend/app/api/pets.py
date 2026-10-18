@@ -109,7 +109,9 @@ def public_medical_card(token: str, request: Request, db: DbSession):
     return {
         "id": pet.id, "name": pet.name, "species": pet.species, "breed": pet.breed,
         "birth_date": pet.birth_date, "sex": pet.sex, "weight_kg": pet.weight_kg, "height_cm": pet.height_cm,
-        "photo_url": pet.photo_url, "age_years": age_years, "vaccinations": vaccinations,
+        "photo_url": pet.photo_url, "allergies": pet.allergies,
+        "chronic_conditions": pet.chronic_conditions,
+        "age_years": age_years, "vaccinations": vaccinations,
     }
 
 

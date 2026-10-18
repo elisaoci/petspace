@@ -180,6 +180,8 @@ def read_by_token(token: str, request: Request, db: DbSession) -> PublicAccessRe
             weight_kg=pet.weight_kg,
             height_cm=pet.height_cm,
             photo_url=pet.photo_url,
+            allergies=pet.allergies,
+            chronic_conditions=pet.chronic_conditions,
             age_years=_age_years(pet.birth_date),
         )
 

@@ -93,6 +93,8 @@ class PublicPetProfile(BaseModel):
     weight_kg: float | None
     height_cm: float | None
     photo_url: str | None
+    allergies: str | None = None
+    chronic_conditions: str | None = None
     age_years: int | None
 
 

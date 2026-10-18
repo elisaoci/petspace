@@ -21,6 +21,10 @@ from app.models.entities import CalendarEvent, ChatMessage, Pet, Subscription
 from app.models.idempotency import IdempotencyKey
 from app.models.medical import (
     ACCESS_SCOPES,
+    APPOINTMENT_CANCELLED,
+    APPOINTMENT_CONFIRMED,
+    APPOINTMENT_REQUESTED,
+    APPOINTMENT_STATUSES,
     AUTHOR_CLINIC,
     AUTHOR_OWNER,
     DEFAULT_SCOPES,
@@ -33,12 +37,18 @@ from app.models.medical import (
     SOURCE_MANUAL,
     SOURCE_MIS,
     AccessGrant,
+    Appointment,
     MedicalRecord,
     RecordRevision,
 )
 
 __all__ = [
     "ACCESS_SCOPES",
+    "APPOINTMENT_CANCELLED",
+    "APPOINTMENT_CONFIRMED",
+    "APPOINTMENT_REQUESTED",
+    "APPOINTMENT_STATUSES",
+    "Appointment",
     "AccessGrant",
     "AUTHOR_CLINIC",
     "AUTHOR_OWNER",

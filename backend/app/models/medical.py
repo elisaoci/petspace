@@ -35,6 +35,12 @@ SOURCE_MIS = "mis"
 RECORD_SOURCES = (SOURCE_MANUAL, SOURCE_MIS)
 
 # Разделы, которые можно открыть по ссылке
+# Запись в клинику
+APPOINTMENT_REQUESTED = "requested"
+APPOINTMENT_CONFIRMED = "confirmed"
+APPOINTMENT_CANCELLED = "cancelled"
+APPOINTMENT_STATUSES = (APPOINTMENT_REQUESTED, APPOINTMENT_CONFIRMED, APPOINTMENT_CANCELLED)
+
 SCOPE_PROFILE = "profile"
 SCOPE_RECORDS = "records"
 SCOPE_VACCINATIONS = "vaccinations"
@@ -124,3 +130,24 @@ class AccessGrant(Base):
 
     def describe(self) -> dict[str, Any]:
         return {"label": self.label, "expires_at": self.expires_at, "scopes": self.scopes}
+
+
+class Appointment(Base):
+    """Заявка на приём: владелец выбирает клинику и время, клиника подтверждает (этап 3)."""
+
+    __tablename__ = "appointments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pet_id: Mapped[int] = mapped_column(
+        ForeignKey("pets.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    clinic_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    slot_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    comment: Mapped[str | None] = mapped_column(EncryptedText)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default=APPOINTMENT_REQUESTED)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

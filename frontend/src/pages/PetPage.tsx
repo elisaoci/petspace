@@ -30,8 +30,8 @@ export function PetPage() {
     setWeight(pet.weight_kg != null ? String(pet.weight_kg) : "");
     setHeight(pet.height_cm != null ? String(pet.height_cm) : "");
     setBirthDate(pet.birth_date || "");
-    setAllergies(notePart(pet.owner_notes, "Аллергии"));
-    setConditions(notePart(pet.owner_notes, "Заболевания"));
+    setAllergies(pet.allergies ?? "");
+    setConditions(pet.chronic_conditions ?? "");
   }, [pet]);
 
   if (!pet) {
@@ -48,7 +48,6 @@ export function PetPage() {
   const save = async () => {
     setError("");
     try {
-      const notes = [allergies && `Аллергии: ${allergies}`, conditions && `Заболевания: ${conditions}`].filter(Boolean).join("\n");
       const updated = await api<Pet>(`/pets/${pet.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -58,7 +57,8 @@ export function PetPage() {
           weight_kg: weight ? Number(weight) : null,
           height_cm: height ? Number(height) : null,
           birth_date: birthDate || null,
-          owner_notes: notes || null,
+          allergies: allergies.trim() || null,
+          chronic_conditions: conditions.trim() || null,
         }),
       });
       updatePet(updated);

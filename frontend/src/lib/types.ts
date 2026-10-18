@@ -24,6 +24,8 @@ export type Pet = {
   weight_kg?: number | null;
   height_cm?: number | null;
   owner_notes?: string | null;
+  allergies?: string | null;
+  chronic_conditions?: string | null;
   photo_url?: string | null;
   medical_secret_token?: string;
 };
@@ -45,7 +47,6 @@ export type ChatHistoryItem = {
   role: "user" | "assistant" | "system";
   content: string;
   created_at: string;
-  feedback?: "useful" | "not_useful" | null;
 };
 
 export type Reminder = {
@@ -109,4 +110,15 @@ export type PublicAccess = {
   pet: PublicPet | null;
   records: MedicalRecord[] | null;
   vaccinations: MedicalRecord[] | null;
+};
+
+export type Appointment = {
+  id: number;
+  pet_id: number;
+  clinic_name: string;
+  slot_start: string;
+  comment?: string | null;
+  status: "requested" | "confirmed" | "cancelled";
+  created_at: string;
+  updated_at: string;
 };

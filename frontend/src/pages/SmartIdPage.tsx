@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { AccessPanel } from "../components/AccessPanel";
+import { AppointmentsPanel } from "../components/AppointmentsPanel";
 import { RecordsPanel } from "../components/RecordsPanel";
 import { PetSwitcher } from "../components/PetSwitcher";
 
-type Tab = "records" | "access";
+type Tab = "records" | "access" | "appointments";
 
 export function SmartIdPage() {
   const [tab, setTab] = useState<Tab>("records");
@@ -41,10 +42,19 @@ export function SmartIdPage() {
         >
           Доступы клиник
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "appointments"}
+          className={tab === "appointments" ? "active" : ""}
+          onClick={() => setTab("appointments")}
+        >
+          Запись на приём
+        </button>
       </div>
 
       <div className="smartid-panel">
-        {tab === "records" ? <RecordsPanel /> : <AccessPanel />}
+        {tab === "records" ? <RecordsPanel /> : tab === "access" ? <AccessPanel /> : <AppointmentsPanel />}
       </div>
     </main>
   );

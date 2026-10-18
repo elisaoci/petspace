@@ -23,6 +23,8 @@ class Pet(Base):
     photo_url: Mapped[str | None] = mapped_column(String(500))
     # Аллергии и хронические болезни — медицинские данные, шифруются AES-256-GCM.
     owner_notes: Mapped[str | None] = mapped_column(EncryptedText)
+    allergies: Mapped[str | None] = mapped_column(EncryptedText)
+    chronic_conditions: Mapped[str | None] = mapped_column(EncryptedText)
     medical_secret_token: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     events: Mapped[list["CalendarEvent"]] = relationship(back_populates="pet", cascade="all, delete-orphan")
@@ -50,8 +52,6 @@ class ChatMessage(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     # Переписка с ИИ содержит описание симптомов — тоже медицинские данные.
     content: Mapped[str] = mapped_column(EncryptedText, nullable=False)
-    # Оценка владельца: useful / not_useful. Нужна для разбора качества ответов.
-    feedback: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     pet: Mapped[Pet | None] = relationship(back_populates="messages")
 

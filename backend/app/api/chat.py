@@ -2,15 +2,14 @@ import json
 from collections.abc import AsyncIterator
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
 
 from app.api.deps import CurrentUser, DbSession, get_owned_pet
 from app.config import get_settings
 from app.models import ChatMessage, Pet
-from app.schemas.chat import ChatFeedbackRequest, ChatFeedbackResponse, ChatRequest
-from app.services.audit import record_audit
+from app.schemas.chat import ChatRequest
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -37,7 +36,6 @@ def get_history(conversation_id: str, user: CurrentUser, db: DbSession):
             "role": message.role,
             "content": message.content,
             "created_at": message.created_at,
-            "feedback": message.feedback,
         }
         for message in messages
     ]
@@ -52,42 +50,6 @@ def clear_history(conversation_id: str, user: CurrentUser, db: DbSession):
         )
     )
     db.commit()
-
-
-@router.post("/messages/{message_id}/feedback", response_model=ChatFeedbackResponse)
-def set_feedback(
-    message_id: int,
-    payload: ChatFeedbackRequest,
-    request: Request,
-    user: CurrentUser,
-    db: DbSession,
-) -> ChatFeedbackResponse:
-    """Оценка ответа ИИ. Нужна для недельного разбора качества из плана пилота."""
-    message = db.scalar(
-        select(ChatMessage)
-        .join(Pet, Pet.id == ChatMessage.pet_id)
-        .where(ChatMessage.id == message_id, Pet.owner_id == user.id)
-    )
-    if message is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
-    if message.role != "assistant":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"error": "not_assistant_message", "message": "Оценивать можно только ответы ИИ"},
-        )
-
-    message.feedback = payload.value
-    db.commit()
-    record_audit(
-        db,
-        action="chat.feedback",
-        actor_user_id=user.id,
-        entity="chat_message",
-        entity_id=message.id,
-        request=request,
-        details={"value": payload.value},
-    )
-    return ChatFeedbackResponse(id=message.id, feedback=payload.value)
 
 
 @router.post("/stream")
@@ -108,6 +70,8 @@ async def stream_chat(payload: ChatRequest, user: CurrentUser, db: DbSession):
     pet_context = (
         f"Имя: {pet.name}; вид: {pet.species}; порода: {pet.breed or 'не указана'}; "
         f"рост: {pet.height_cm or 'не указан'} см; вес: {pet.weight_kg or 'не указан'} кг; "
+        f"аллергии: {pet.allergies or 'не указаны'}; "
+        f"хронические болезни: {pet.chronic_conditions or 'не указаны'}; "
         f"заметки владельца: {pet.owner_notes or 'нет'}."
     )
     system_prompt = (
