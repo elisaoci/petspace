@@ -8,6 +8,7 @@ const links = [
   { to: "/app", label: "Кабинет", end: true },
   { to: "/app/pet", label: "Питомец", end: false },
   { to: "/app/calendar", label: "Календарь", end: false },
+  { to: "/app/smart-id", label: "Smart-ID", end: false },
   { to: "/app/chat", label: "ИИ-помощник", end: false },
   { to: "/app/settings", label: "Настройки", end: false },
   { to: "/plus", label: "Plus", end: false },

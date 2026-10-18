@@ -9,7 +9,8 @@
 - ИИ: Ollama на хосте (по умолчанию модель `qwen2.5:3b`), ответы стримятся по SSE
 
 Страницы: `/` главная, `/login` вход и регистрация, `/reset-password` восстановление пароля,
-`/app` кабинет, `/app/pet`, `/app/calendar`, `/app/chat`, `/app/settings`, `/plus`, `/medical/:token`.
+`/app` кабинет, `/app/pet`, `/app/calendar`, `/app/smart-id` (медкарта и доступы), `/app/chat`,
+`/app/settings`, `/plus`, `/medical/access/:token` (карта для клиники), `/medical/:token`.
 
 ## Быстрый старт (Docker Compose)
 
@@ -244,6 +245,28 @@ ACCESS=$(curl -s -X POST $API/auth/register -H 'Content-Type: application/json' 
 curl -s -H "Authorization: Bearer $ACCESS" $API/pets
 ```
 
+## Smart-ID и доступы клиник
+
+Медкарта собирается из записей: приём, прививка, анализы, назначение, другое. У каждой записи
+есть дата, клиника, автор (`owner` или `clinic`), источник (`manual` или `mis`) и шифруемые тексты
+(описание, диагноз). Изменения сохраняются в историю: `GET /records/{id}/revisions` показывает, что
+было в записи до правки.
+
+Доступ выдаётся ссылкой, а не логином клиники:
+
+1. `POST /api/v1/pets/{id}/access-grants` с `{"label": "Клиника «Айболит», врач Иванов",
+   "scopes": ["profile", "records", "vaccinations"], "ttl_days": 7}` — в ответе приходит токен
+   и относительный `url`. **Токен показывается один раз**: в базе лежит только его SHA-256.
+2. Клиника открывает `/medical/access/<token>` — без авторизации, по ссылке.
+3. Владелец видит список доступов (кто, до какого срока, когда открывали) и может отозвать любой:
+   `POST /api/v1/access-grants/{id}/revoke`. Отзыв действует немедленно, ссылка отвечает `404`.
+4. Каждое открытие карты пишется в журнал (`medical_access.read`), у доступа обновляется
+   `last_used_at`.
+
+Что клиника **никогда** не увидит: заметки владельца, служебные поля, чужие карты и историю
+изменений. Разделы ограничиваются `scopes`: без `profile` не будет данных питомца, без `records` —
+истории, без `vaccinations` — прививок.
+
 ## Переменные окружения
 
 | Переменная | Назначение | Значение по умолчанию |
@@ -297,6 +320,12 @@ backend всегда ходит на `db:5432`.
 | GET | `/api/v1/pets/public/medical-card/{token}` | публичная медкарта без заметок владельца (без авторизации) |
 | GET/POST | `/api/v1/events` | календарь (фильтр `?pet_id=`), у каждого события есть `computed_status` |
 | GET/PATCH/DELETE | `/api/v1/events/{id}` | редактирование события |
+| GET/POST | `/api/v1/pets/{id}/records` | медкарта: список и добавление записи |
+| GET/PATCH/DELETE | `/api/v1/records/{id}` | запись медкарты |
+| GET | `/api/v1/records/{id}/revisions` | история изменений записи |
+| GET/POST | `/api/v1/pets/{id}/access-grants` | доступы к медкарте: список и выдача |
+| POST | `/api/v1/access-grants/{id}/revoke` | отзыв доступа |
+| GET | `/api/v1/medical/access/{token}` | карта для клиники по ссылке (без авторизации) |
 | POST | `/api/v1/chat/stream` | SSE-поток ответа Ollama с контекстом питомца |
 | GET/DELETE | `/api/v1/chat/history/{conversation_id}` | история и очистка диалога |
 | POST | `/api/v1/payments/demo` | заглушка демо-оплаты: карта не обрабатывается и не сохраняется |
@@ -347,7 +376,8 @@ curl -X POST "$API/pets" -H "Authorization: Bearer $ACCESS" \
 
 - вход владельца по паролю и по коду, согласия с версиями текста, роли и журнал доступа к данным;
 - шифрование медицинских текстов (AES-256-GCM), единый формат ошибок, пагинация и идемпотентность записи;
-- профиль и несколько питомцев, фото, случайная публичная ссылка медкарты;
+- профиль и несколько питомцев, фото, Smart-ID с историей приёмов и источником каждой записи;
+- доступ клиники по ссылке с разделами, сроком и отзывом;
 - календарь прививок и обработок с вычисляемым статусом `overdue`;
 - SSE-чат с Ollama, персональным системным контекстом и очисткой истории;
 - локальная демонстрация уведомления на странице календаря (Web Notification API, нужно разрешение браузера);
@@ -363,10 +393,11 @@ curl -X POST "$API/pets" -H "Authorization: Bearer $ACCESS" \
 .github/workflows/  CI: линтер, тесты, сборка и проверка контейнеров
 infra/nginx/       конфигурация шлюза: TLS, ограничение частоты, SSE без буферизации
 backend/
-  app/api/          роутеры: auth, pets, events, chat, payments, admin, health;
-                    deps.py — доступ и роли, errors.py — единый формат ошибок, pagination.py
+  app/api/          роутеры: auth, pets, events, records (Smart-ID), access (ссылки), chat,
+                    payments, admin, health; deps.py — доступ и роли, errors.py — ошибки,
+                    pagination.py
   app/models/       модели: entities.py (питомцы, календарь, чат), auth.py (пользователи, OTP,
-                    токены, согласия, аудит), idempotency.py
+                    токены, согласия, аудит), idempotency.py, medical.py (медзаписи и доступы)
   app/services/     security, sessions, passwords, crypto (AES-256-GCM), consents, email, audit, idempotency
   app/cli.py        promote (выдать platform_admin) и backfill-encryption
   app/schemas/      Pydantic-схемы
@@ -378,7 +409,8 @@ frontend/
   public/           manifest, service worker, иконки PWA
   scripts/          генератор иконок
   src/pages/        HomePage, LoginPage, ResetPasswordPage, DashboardPage, PetPage,
-                    CalendarPage, ChatPage, SettingsPage, PlusPage, MedicalCardPage
+                    CalendarPage, SmartIdPage, ChatPage, SettingsPage, PlusPage,
+                    MedicalCardPage, AccessCardPage
   src/components/   Layout, PetSwitcher, DogIllustration, RequireAuth
   src/context/      AuthContext (сессия), PetContext (активный питомец)
   src/lib/          api.ts (токены и автообновление), types.ts, format.ts, registerServiceWorker.ts
