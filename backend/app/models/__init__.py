@@ -18,6 +18,20 @@ from app.models.auth import (
     RefreshToken,
     User,
 )
+from app.models.clinic import (
+    CLINIC_APPROVED,
+    CLINIC_PENDING,
+    CLINIC_REJECTED,
+    CLINIC_STAFF_ROLES,
+    CLINIC_STATUSES,
+    CLINIC_SUSPENDED,
+    STAFF_ACTIVE,
+    STAFF_DISABLED,
+    STAFF_STATUSES,
+    Clinic,
+    ClinicDocument,
+    ClinicStaff,
+)
 from app.models.entities import CalendarEvent, ChatMessage, Pet, Subscription
 from app.models.idempotency import IdempotencyKey
 from app.models.medical import (
@@ -60,6 +74,18 @@ __all__ = [
     "CONSENT_VERSIONS",
     "CalendarEvent",
     "ChatMessage",
+    "CLINIC_APPROVED",
+    "CLINIC_PENDING",
+    "CLINIC_REJECTED",
+    "CLINIC_STAFF_ROLES",
+    "CLINIC_STATUSES",
+    "CLINIC_SUSPENDED",
+    "STAFF_ACTIVE",
+    "STAFF_DISABLED",
+    "STAFF_STATUSES",
+    "Clinic",
+    "ClinicDocument",
+    "ClinicStaff",
     "Consent",
     "DEFAULT_SCOPES",
     "IdempotencyKey",
