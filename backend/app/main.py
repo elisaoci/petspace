@@ -14,6 +14,8 @@ from app.api.clinics import router as clinics_router
 from app.api.errors import install_error_handlers
 from app.api.events import router as events_router
 from app.api.health import router as health_router
+from app.api.owner_access import router as owner_access_router
+from app.api.patient_access import router as patient_access_router
 from app.api.payments import router as payments_router
 from app.api.pets import router as pets_router
 from app.api.records import router as records_router
@@ -68,6 +70,8 @@ for router in (
     admin_router,
     admin_clinics_router,
     clinics_router,
+    patient_access_router,
+    owner_access_router,
     analytics_router,
 ):
     app.include_router(router, prefix=API_V1_PREFIX)

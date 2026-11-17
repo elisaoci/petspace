@@ -5,6 +5,10 @@
 
 Доступ выдаётся длинным токеном с набором разделов, сроком действия и возможностью
 отзыва. Сырой токен показывается один раз, в базе лежит только хэш.
+
+Доступ клиники (этап 4) — тот же `AccessGrant`, но с `clinic_id` и без токена: клиника
+читает карту через свой кабинет, а не по публичной ссылке. Владелец видит такие доступы
+в общем списке и отзывает тем же эндпоинтом.
 """
 
 from datetime import datetime
@@ -113,7 +117,12 @@ class AccessGrant(Base):
         ForeignKey("pets.id", ondelete="CASCADE"), index=True, nullable=False
     )
     label: Mapped[str] = mapped_column(String(200), nullable=False)
-    token_hash: Mapped[str] = mapped_column(String(128), unique=True, index=True, nullable=False)
+    # NULL у доступов клиники: публичной ссылки у них нет, а уникальность допускает много NULL.
+    token_hash: Mapped[str | None] = mapped_column(String(128), unique=True, index=True)
+    # Клиника, которой выдан доступ. NULL — обычная ссылка владельца.
+    clinic_id: Mapped[int | None] = mapped_column(
+        ForeignKey("clinics.id", ondelete="CASCADE"), index=True
+    )
     scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

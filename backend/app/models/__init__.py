@@ -56,6 +56,16 @@ from app.models.medical import (
     MedicalRecord,
     RecordRevision,
 )
+from app.models.patient_access import (
+    REQUEST_APPROVED,
+    REQUEST_CANCELLED,
+    REQUEST_DENIED,
+    REQUEST_EXPIRED,
+    REQUEST_PENDING,
+    REQUEST_STATUSES,
+    AccessCode,
+    AccessRequest,
+)
 
 __all__ = [
     "ACCESS_SCOPES",
@@ -66,6 +76,14 @@ __all__ = [
     "APPOINTMENT_STATUSES",
     "Appointment",
     "AccessGrant",
+    "REQUEST_APPROVED",
+    "REQUEST_CANCELLED",
+    "REQUEST_DENIED",
+    "REQUEST_EXPIRED",
+    "REQUEST_PENDING",
+    "REQUEST_STATUSES",
+    "AccessCode",
+    "AccessRequest",
     "AUTHOR_CLINIC",
     "AUTHOR_OWNER",
     "AuditLog",

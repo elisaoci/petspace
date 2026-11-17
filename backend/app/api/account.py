@@ -7,8 +7,10 @@
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel
+from sqlalchemy import func, select
 
 from app.api.deps import CurrentUser, DbSession
+from app.models import ROLE_CLINIC_ADMIN, STAFF_ACTIVE, ClinicStaff
 from app.services.audit import record_audit
 from app.services.passwords import verify_password
 
@@ -46,6 +48,29 @@ def delete_account(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error": "wrong_password", "message": "Пароль неверен"},
         )
+
+    # Последнего администратора клиники удалить нельзя: клиника осталась бы без управления,
+    # а её сотрудники и доступы к пациентам — без владельца решений.
+    membership = db.scalar(select(ClinicStaff).where(ClinicStaff.user_id == user.id))
+    if membership is not None and membership.role == ROLE_CLINIC_ADMIN and membership.status == STAFF_ACTIVE:
+        other_admins = db.scalar(
+            select(func.count())
+            .select_from(ClinicStaff)
+            .where(
+                ClinicStaff.clinic_id == membership.clinic_id,
+                ClinicStaff.role == ROLE_CLINIC_ADMIN,
+                ClinicStaff.status == STAFF_ACTIVE,
+                ClinicStaff.user_id != user.id,
+            )
+        )
+        if not other_admins:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "last_admin",
+                    "message": "Вы единственный администратор клиники: назначьте другого перед удалением аккаунта",
+                },
+            )
 
     user_id = user.id
     # Аудит до удаления: внешний ключ actor_user_id обнулится каскадом (SET NULL),

@@ -66,6 +66,8 @@ class AccessGrantResponse(BaseModel):
     id: int
     pet_id: int
     label: str
+    # Заполнен у доступов клиник; у ссылок владельца — None.
+    clinic_id: int | None = None
     scopes: list[str]
     expires_at: datetime
     revoked_at: datetime | None
