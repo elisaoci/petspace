@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { ServicesPage } from "../pages/ServicesPage";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { RequireAuth } from "../components/RequireAuth";
@@ -38,6 +39,7 @@ export function App() {
         <Route path="/app" element={<RequireAuth><DashboardPage /></RequireAuth>} />
         <Route path="/app/pet" element={<RequireAuth><PetPage /></RequireAuth>} />
         <Route path="/app/calendar" element={<RequireAuth><CalendarPage /></RequireAuth>} />
+        <Route path="/app/services" element={<RequireAuth><ServicesPage /></RequireAuth>} />
         <Route path="/app/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
         <Route path="/app/smart-id" element={<RequireAuth><SmartIdPage /></RequireAuth>} />
         <Route path="/app/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
