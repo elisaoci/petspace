@@ -32,6 +32,13 @@ from app.models.clinic import (
     ClinicDocument,
     ClinicStaff,
 )
+from app.models.encounter import (
+    ENCOUNTER_COMPLETED,
+    ENCOUNTER_IN_PROGRESS,
+    ENCOUNTER_STATUSES,
+    Encounter,
+    RecordAttachment,
+)
 from app.models.entities import CalendarEvent, ChatMessage, Pet, Subscription
 from app.models.idempotency import IdempotencyKey
 from app.models.medical import (
@@ -76,6 +83,11 @@ __all__ = [
     "APPOINTMENT_STATUSES",
     "Appointment",
     "AccessGrant",
+    "ENCOUNTER_COMPLETED",
+    "ENCOUNTER_IN_PROGRESS",
+    "ENCOUNTER_STATUSES",
+    "Encounter",
+    "RecordAttachment",
     "REQUEST_APPROVED",
     "REQUEST_CANCELLED",
     "REQUEST_DENIED",

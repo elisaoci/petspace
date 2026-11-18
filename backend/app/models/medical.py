@@ -67,6 +67,10 @@ class MedicalRecord(Base):
     author_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     source: Mapped[str] = mapped_column(String(16), nullable=False, default=SOURCE_MANUAL)
     external_id: Mapped[str | None] = mapped_column(String(128))
+    # Приём, в рамках которого врач клиники создал запись. У записей владельца и импорта пусто.
+    encounter_id: Mapped[int | None] = mapped_column(
+        ForeignKey("encounters.id", ondelete="SET NULL"), index=True
+    )
     # Жалобы, описание приёма, результаты — медицинские данные, шифруются.
     description: Mapped[str | None] = mapped_column(EncryptedText)
     diagnosis: Mapped[str | None] = mapped_column(EncryptedText)

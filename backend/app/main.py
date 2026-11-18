@@ -11,6 +11,7 @@ from app.api.appointments import router as appointments_router
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
 from app.api.clinics import router as clinics_router
+from app.api.encounters import router as encounters_router
 from app.api.errors import install_error_handlers
 from app.api.events import router as events_router
 from app.api.health import router as health_router
@@ -18,6 +19,7 @@ from app.api.owner_access import router as owner_access_router
 from app.api.patient_access import router as patient_access_router
 from app.api.payments import router as payments_router
 from app.api.pets import router as pets_router
+from app.api.record_attachments import router as record_attachments_router
 from app.api.records import router as records_router
 from app.api.reminders import router as reminders_router
 from app.config import get_settings
@@ -72,6 +74,8 @@ for router in (
     clinics_router,
     patient_access_router,
     owner_access_router,
+    encounters_router,
+    record_attachments_router,
     analytics_router,
 ):
     app.include_router(router, prefix=API_V1_PREFIX)
