@@ -1,11 +1,15 @@
-import { useState } from "react";
-import { KeyRound, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, KeyRound, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { ApiError } from "../lib/api";
 
 export function SettingsPage() {
-  const { user, changePassword } = useAuth();
+  const { user, changePassword, updateProfile } = useAuth();
+  const [fullName, setFullName] = useState(user?.full_name || "");
+  const [profileError, setProfileError] = useState("");
+  const [profileDone, setProfileDone] = useState("");
+  const [profileBusy, setProfileBusy] = useState(false);
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [repeat, setRepeat] = useState("");
@@ -14,6 +18,27 @@ export function SettingsPage() {
   const [busy, setBusy] = useState(false);
 
   const passwordSet = user?.has_password ?? false;
+
+  useEffect(() => setFullName(user?.full_name || ""), [user?.full_name]);
+
+  const saveProfile = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setProfileError("");
+    setProfileDone("");
+    if (fullName.trim().length < 2) {
+      setProfileError("Укажите ФИО.");
+      return;
+    }
+    setProfileBusy(true);
+    try {
+      await updateProfile(fullName.trim());
+      setProfileDone("ФИО сохранено и будет отображаться в анкетах питомцев.");
+    } catch (caught) {
+      setProfileError(caught instanceof Error ? caught.message : "Не удалось сохранить ФИО.");
+    } finally {
+      setProfileBusy(false);
+    }
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -55,12 +80,31 @@ export function SettingsPage() {
           <span className="card-kicker">Аккаунт</span>
           <h3>{user?.email}</h3>
           <p className="muted">
-            Роль: владелец. Согласия: {user?.consents_accepted ? "приняты" : "нужно обновить"}.
+            Роль: {user?.role === "owner" ? "владелец питомца" : user?.role}. Согласия: {user?.consents_accepted ? "приняты" : "нужно обновить"}.
             Пароль: {passwordSet ? "задан" : "не задан — вход по коду с почты"}.
           </p>
           <p className="muted">
             Если пароль забыт, его можно восстановить по коду: <Link to="/reset-password">восстановление пароля</Link>.
           </p>
+          <form className="profile-name-form" onSubmit={saveProfile}>
+            <label className="field-label" htmlFor="owner-full-name">ФИО владельца
+              <input
+                className="text-input"
+                id="owner-full-name"
+                autoComplete="name"
+                minLength={2}
+                maxLength={255}
+                value={fullName}
+                onChange={event => setFullName(event.target.value)}
+                required
+              />
+            </label>
+            <button className="button secondary" type="submit" disabled={profileBusy}>
+              {profileBusy ? "Сохраняем…" : <><Check size={15} /> Сохранить ФИО</>}
+            </button>
+            {profileError && <p className="form-error" role="alert">{profileError}</p>}
+            {profileDone && <p className="muted" role="status">{profileDone}</p>}
+          </form>
         </div>
 
         <form onSubmit={submit}>

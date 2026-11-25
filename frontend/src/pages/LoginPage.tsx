@@ -21,6 +21,7 @@ export function LoginPage() {
   const location = useLocation();
 
   const [mode, setMode] = useState<Mode>("login");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [accepted, setAccepted] = useState<string[]>([]);
@@ -44,7 +45,7 @@ export function LoginPage() {
 
   if (user) return <Navigate to={from} replace />;
 
-  const allAccepted = consentRequirements.every(item => accepted.includes(item.kind));
+  const allAccepted = consentRequirements.length > 0 && consentRequirements.every(item => accepted.includes(item.kind));
 
   const reset = (next: Mode) => {
     setMode(next);
@@ -76,11 +77,12 @@ export function LoginPage() {
     setError("");
     try {
       await register(
+        fullName.trim(),
         email.trim(),
         password,
         consentRequirements.map(item => ({ kind: item.kind, version: item.version })),
       );
-      navigate(from, { replace: true });
+      navigate("/app/pet", { replace: true });
     } catch (caught) {
       setError(authErrorMessage(caught, "регистрация"));
     } finally {
@@ -120,19 +122,13 @@ export function LoginPage() {
   };
 
   return (
-    <main className="content">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Кабинет владельца</p>
-          <h1>{mode === "register" ? "Регистрация" : "Вход"}</h1>
+    <main className="content auth-page">
+      <section className="card auth-card">
+        <div className="auth-heading">
+          <p className="eyebrow">Личный кабинет</p>
+          <h1>{mode === "register" ? "Создайте аккаунт" : mode === "code" ? "Вход по коду" : "С возвращением"}</h1>
+          <p className="muted">Профиль питомца, календарь и важные заметки — в одном месте.</p>
         </div>
-      </div>
-      <p className="lead">
-        Данные питомца принадлежат владельцу: клиника получит доступ только после вашего подтверждения.
-        {mode === "register" && " Аккаунт создаётся один раз — потом вы входите по паролю."}
-      </p>
-
-      <section className="card form-layout">
         {mode !== "code" && (
           <div className="segmented" role="tablist" aria-label="Вход или регистрация">
             <button
@@ -188,6 +184,18 @@ export function LoginPage() {
 
         {mode === "register" && (
           <form onSubmit={submitRegister}>
+            <label className="soft-label" htmlFor="register-full-name">ФИО владельца</label>
+            <input
+              className="text-input"
+              id="register-full-name"
+              autoComplete="name"
+              placeholder="Имя и фамилия"
+              minLength={2}
+              maxLength={255}
+              value={fullName}
+              onChange={event => setFullName(event.target.value)}
+              required
+            />
             <label className="soft-label" htmlFor="register-email">Email</label>
             <input
               className="text-input"
@@ -235,6 +243,7 @@ export function LoginPage() {
             <button className="button primary full-button" type="submit" disabled={busy || !allAccepted}>
               {busy ? "Создаём…" : "Создать аккаунт"} <ArrowRight size={16} />
             </button>
+            <p className="auth-security"><ShieldCheck size={14} /> Данные аккаунта защищены и доступны только вам.</p>
           </form>
         )}
 
@@ -294,10 +303,14 @@ export function LoginPage() {
         <div className="auth-switch">
           {mode !== "code" ? (
             <>
-              <button type="button" className="link-button" onClick={() => reset("code")}>
-                <Mail size={14} /> Войти по коду с почты
-              </button>
-              <Link className="link-button" to="/reset-password">Забыли пароль?</Link>
+              {mode === "login" && (
+                <>
+                  <button type="button" className="link-button" onClick={() => reset("code")}>
+                    <Mail size={14} /> Войти по коду с почты
+                  </button>
+                  <Link className="link-button" to="/reset-password">Забыли пароль?</Link>
+                </>
+              )}
             </>
           ) : (
             <button type="button" className="link-button" onClick={() => reset("login")}>
@@ -306,7 +319,6 @@ export function LoginPage() {
           )}
         </div>
 
-        <p className="muted"><ShieldCheck size={14} /> Мы никогда не спрашиваем пароль или код по телефону и в чате.</p>
       </section>
     </main>
   );

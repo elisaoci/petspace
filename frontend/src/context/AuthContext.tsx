@@ -14,11 +14,12 @@ type AuthContextValue = {
   user: User | null;
   loading: boolean;
   consentRequirements: ConsentRequirement[];
-  register: (email: string, password: string, consents: ConsentRequirement[]) => Promise<void>;
+  register: (fullName: string, email: string, password: string, consents: ConsentRequirement[]) => Promise<void>;
   loginWithPassword: (email: string, password: string) => Promise<void>;
   requestCode: (email: string) => Promise<{ expires_in: number; dev_code?: string | null }>;
   verifyCode: (email: string, code: string) => Promise<void>;
   changePassword: (currentPassword: string | null, newPassword: string) => Promise<void>;
+  updateProfile: (fullName: string) => Promise<void>;
   requestPasswordReset: (email: string) => Promise<{ expires_in: number; dev_code?: string | null }>;
   confirmPasswordReset: (email: string, code: string, newPassword: string) => Promise<void>;
   acceptConsents: (consents: ConsentRequirement[]) => Promise<void>;
@@ -72,11 +73,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(
-    async (email: string, password: string, consents: ConsentRequirement[]) => {
+    async (fullName: string, email: string, password: string, consents: ConsentRequirement[]) => {
       const tokens = await api<TokenPair & { user: User }>("/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, consents }),
+        body: JSON.stringify({ full_name: fullName, email, password, consents }),
       });
       storeSession(tokens);
     },
@@ -126,6 +127,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [storeSession],
   );
+
+  const updateProfile = useCallback(async (fullName: string) => {
+    const updated = await api<User>("/auth/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full_name: fullName }),
+    });
+    setUser(updated);
+  }, []);
 
   const requestPasswordReset = useCallback(async (email: string) => {
     return api<{ expires_in: number; dev_code?: string | null; message: string }>("/auth/password/reset/request", {
@@ -183,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       confirmPasswordReset,
       acceptConsents,
       logout,
+      updateProfile,
     }),
     [
       user,
@@ -197,6 +208,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       confirmPasswordReset,
       acceptConsents,
       logout,
+      updateProfile,
     ],
   );
 
