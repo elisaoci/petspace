@@ -1,4 +1,6 @@
 import { useEffect } from "react";
+import { ClinicPage } from "../pages/ClinicPage";
+import { AdminClinicsPage } from "../pages/AdminClinicsPage";
 import { ServicesPage } from "../pages/ServicesPage";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "../components/Layout";
@@ -48,6 +50,8 @@ export function App() {
         <Route path="/medical/access/:token" element={<AccessCardPage />} />
         <Route path="/medical/:token" element={<MedicalCardPage />} />
         <Route path="*" element={<NotFoundPage />} />
+        <Route path="/clinic" element={<ClinicPage />} />
+        <Route path="/admin/clinics" element={<RequireAuth><AdminClinicsPage /></RequireAuth>} />
       </Route>
       </Routes>
     </>

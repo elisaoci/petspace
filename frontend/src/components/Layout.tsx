@@ -13,6 +13,7 @@ const links = [
   { to: "/app/chat", label: "ИИ-помощник", end: false },
   { to: "/app/settings", label: "Настройки", end: false },
   { to: "/plus", label: "Plus", end: false },
+  { to: "/clinic", label: "Клиникам", end: false },
 ];
 
 export function Layout() {
