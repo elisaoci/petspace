@@ -5,7 +5,7 @@ import { api } from "../lib/api";
 import type { Pet } from "../lib/types";
 import { DogIllustration } from "./DogIllustration";
 
-export function PetSwitcher() {
+export function PetSwitcher({ showAdd = true }: { showAdd?: boolean }) {
   const { pets, selectedPetId, setSelectedPetId, reloadPets } = usePets();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
@@ -52,9 +52,11 @@ export function PetSwitcher() {
         </select>
         <ChevronDown size={16} />
       </label>
-      <button className="button secondary add-pet-button" type="button" onClick={() => setShowForm(true)}>
-        <Plus size={16} /> Добавить
-      </button>
+      {showAdd && (
+        <button className="button secondary add-pet-button" type="button" onClick={() => setShowForm(true)}>
+          <Plus size={16} /> Добавить
+        </button>
+      )}
       {showForm && (
         <div className="modal-backdrop" role="presentation" onClick={() => setShowForm(false)}>
           <div className="modal-card" role="dialog" aria-modal="true" onClick={event => event.stopPropagation()}>

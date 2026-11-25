@@ -58,9 +58,20 @@ class OtpVerifyPayload(EmailPayload):
 
 
 class RegisterPayload(EmailPayload):
+    full_name: str | None = Field(default=None, min_length=2, max_length=255)
     password: str = Field(min_length=8, max_length=128)
     # Проверяем согласия в роутере, чтобы вернуть единый формат ошибки consent_required.
     consents: list[ConsentPayload] = Field(default_factory=list)
+
+    @field_validator("full_name")
+    @classmethod
+    def _normalize_full_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split())
+        if len(normalized) < 2:
+            raise ValueError("Укажите ФИО")
+        return normalized
 
     @field_validator("password")
     @classmethod
@@ -69,6 +80,18 @@ class RegisterPayload(EmailPayload):
         if problem:
             raise ValueError(problem)
         return value
+
+
+class ProfileUpdatePayload(BaseModel):
+    full_name: str = Field(min_length=2, max_length=255)
+
+    @field_validator("full_name")
+    @classmethod
+    def _normalize_full_name(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if len(normalized) < 2:
+            raise ValueError("Укажите ФИО")
+        return normalized
 
 
 class PasswordChangePayload(BaseModel):
@@ -109,6 +132,7 @@ class RefreshPayload(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
+    full_name: str | None
     email: str | None
     phone: str | None
     role: str

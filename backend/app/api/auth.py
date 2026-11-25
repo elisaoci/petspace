@@ -25,6 +25,7 @@ from app.schemas.auth import (
     OtpVerifyPayload,
     PasswordChangePayload,
     PasswordResetConfirmPayload,
+    ProfileUpdatePayload,
     RefreshPayload,
     RegisterPayload,
     TokenPairResponse,
@@ -64,6 +65,7 @@ INVALID_CREDENTIALS = "Неверный email или пароль"
 def _user_response(db: Session, user: User) -> UserResponse:
     return UserResponse(
         id=user.id,
+        full_name=user.full_name,
         email=user.email,
         phone=user.phone,
         role=user.role,
@@ -272,6 +274,7 @@ def register(payload: RegisterPayload, request: Request, db: DbSession) -> Token
 
     now = datetime.now(UTC)
     user = User(
+        full_name=payload.full_name,
         email=payload.email,
         role=ROLE_OWNER,
         status=STATUS_ACTIVE,
@@ -627,6 +630,23 @@ def logout(payload: RefreshPayload, request: Request, db: DbSession) -> Response
 
 @router.get("/me", response_model=UserResponse)
 def me(user: CurrentUser, db: DbSession) -> UserResponse:
+    return _user_response(db, user)
+
+
+@router.patch("/profile", response_model=UserResponse)
+def update_profile(payload: ProfileUpdatePayload, request: Request, user: CurrentUser, db: DbSession) -> UserResponse:
+    user.full_name = payload.full_name
+    db.commit()
+    db.refresh(user)
+    record_audit(
+        db,
+        action="user.profile_updated",
+        actor_user_id=user.id,
+        entity="user",
+        entity_id=user.id,
+        request=request,
+        details={"fields": ["full_name"]},
+    )
     return _user_response(db, user)
 
 

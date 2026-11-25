@@ -111,8 +111,8 @@ export function ChatPage() {
     return (
       <main className="content">
         <div className="page-heading">
-          <div><p className="eyebrow">ИИ-помощник</p><h1>Сначала добавьте питомца</h1></div>
-          <PetSwitcher />
+          <div><h1>Сначала добавьте питомца</h1></div>
+          <PetSwitcher showAdd={false} />
         </div>
       </main>
     );
@@ -122,11 +122,10 @@ export function ChatPage() {
     <main className="content">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Персональный помощник</p>
           <h1>ИИ-чат о {pet.name}</h1>
         </div>
         <div className="pet-controls">
-          <PetSwitcher />
+          <PetSwitcher showAdd={false} />
           <button className="button secondary" type="button" onClick={clearHistory}><Trash2 size={16} /> Очистить</button>
         </div>
       </div>

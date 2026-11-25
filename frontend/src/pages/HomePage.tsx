@@ -1,91 +1,90 @@
-import { ArrowUpRight, CalendarDays, Heart, MessageCircle, PawPrint, ShieldCheck } from "lucide-react";
+import { ArrowRight, CalendarDays, HeartPulse, PawPrint, ShieldCheck, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
-import { DogIllustration } from "../components/DogIllustration";
+import { useAuth } from "../context/AuthContext";
 
 const features = [
   {
     icon: PawPrint,
     title: "Профиль питомца",
-    text: "Имя, порода, вес, рост, фото и заметки о здоровье — всё в одном месте.",
+    text: "Имя, порода, вес, рост, фотографии и заметки о здоровье — всё в одном месте.",
+    note: "Важные данные всегда под рукой.",
   },
   {
     icon: CalendarDays,
     title: "Календарь заботы",
-    text: "Прививки, обработки и визиты. Просроченные события подсвечиваются сами.",
+    text: "Прививки, обработки и визиты. Напоминания о событиях, которые нельзя пропускать.",
+    note: "Планы и история событий в одном календаре.",
   },
   {
-    icon: MessageCircle,
+    icon: Sparkles,
     title: "ИИ-помощник",
-    text: "Локальные ответы по уходу и кормлению с учётом данных питомца. Без диагнозов.",
+    text: "Локальный помощник, который отвечает на вопросы о здоровье, уходе и питании питомца.",
+    note: "Информация для заботы, не замена ветеринару.",
   },
   {
     icon: ShieldCheck,
     title: "Медкарта по ссылке",
-    text: "Секретная ссылка для клиники: прививки и основные данные, без личных заметок.",
+    text: "Секретная ссылка для клиники: прививки и основные данные питомца без личных заметок владельца.",
+    note: "По ссылке доступен только просмотр медкарты.",
   },
 ];
 
+const steps = [
+  ["Создайте профиль", "Добавьте питомца, фотографию и основные данные о его здоровье."],
+  ["Заполните календарь", "Добавьте прививки, обработки, визиты к ветеринару и другие события."],
+  ["Спросите помощника", "Задайте вопрос об уходе и здоровье выбранного питомца."],
+  ["Поделитесь с клиникой", "Передайте основные данные по защищённой ссылке для просмотра."],
+];
+
 export function HomePage() {
+  const { user } = useAuth();
+
   return (
-    <main>
+    <main className="landing-page">
       <section className="content landing-hero">
-        <div className="card hero-card landing-hero-card">
-          <div className="hero-copy">
-            <span className="soft-label"><Heart size={14} /> Для владельцев собак и кошек</span>
-            <h1>Забота о питомце в одном спокойном месте</h1>
-            <p>PetSpace — сайт, где хранится профиль, календарь здоровья и осторожный ИИ-помощник. Без ленты, без шума, только то, что нужно каждый день.</p>
-            <div className="hero-actions">
-              <Link className="button primary" to="/app">Открыть кабинет <ArrowUpRight size={17} /></Link>
-              <a className="button secondary" href="#features">Как это устроено</a>
-            </div>
-          </div>
-          <DogIllustration />
+        <div className="landing-intro">
+          <p className="eyebrow"><HeartPulse size={15} /> Для заботливых владельцев</p>
+          <h1>PetSpace</h1>
+          <p className="landing-subtitle">Забота о вашем питомце в одном приложении.</p>
+          <Link className="button outline-button" to={user ? "/app" : "/login"}>
+            Открыть кабинет <ArrowRight size={16} />
+          </Link>
         </div>
       </section>
 
-      <section className="content" id="features">
-        <div className="page-heading">
-          <div>
-            <p className="eyebrow">Возможности</p>
-            <h2>Сайт, а не набор разрозненных заметок</h2>
+      <section className="content landing-section" id="features">
+        <div className="landing-section-heading">
+          <p className="eyebrow">Всё для заботы</p>
+          <h2>Главное о питомце — в одном месте</h2>
+        </div>
+        <div className="feature-surface">
+          <div className="landing-features">
+            {features.map(({ icon: Icon, title, text, note }) => (
+              <article className="feature-card" key={title}>
+                <span className="icon-box lavender"><Icon size={18} /></span>
+                <h3>{title}</h3>
+                <p>{text}</p>
+                <span className="feature-note">{note}</span>
+              </article>
+            ))}
           </div>
         </div>
-        <div className="bento-grid landing-features">
-          {features.map(feature => (
-            <article className="card" key={feature.title}>
-              <span className="icon-box lavender"><feature.icon size={19} /></span>
-              <h3>{feature.title}</h3>
-              <p className="muted large">{feature.text}</p>
+      </section>
+
+      <section className="content landing-section">
+        <div className="landing-section-heading">
+          <p className="eyebrow">Как пользоваться</p>
+          <h2>Четыре простых шага</h2>
+        </div>
+        <div className="steps-grid">
+          {steps.map(([title, text], index) => (
+            <article className="step-card" key={title}>
+              <span className="step-number">{index + 1}</span>
+              <h3>{title}</h3>
+              <p>{text}</p>
             </article>
           ))}
         </div>
-      </section>
-
-      <section className="content">
-        <div className="page-heading">
-          <div>
-            <p className="eyebrow">Как пользоваться</p>
-            <h2>Три шага</h2>
-          </div>
-        </div>
-        <div className="steps-grid">
-          <article className="card"><span className="step-number">1</span><h3>Создайте профиль</h3><p className="muted">Добавьте питомца, фото и важные пометки: аллергии, вес, рост.</p></article>
-          <article className="card"><span className="step-number">2</span><h3>Заполните календарь</h3><p className="muted">Прививки и обработки появятся в кабинете и напомнят о себе.</p></article>
-          <article className="card"><span className="step-number">3</span><h3>Спросите помощника</h3><p className="muted">ИИ отвечает по-русски и всегда напоминает, что это не замена врачу.</p></article>
-        </div>
-      </section>
-
-      <section className="content landing-cta">
-        <article className="card plus-card">
-          <div className="plus-content">
-            <span className="plus-mark"><Heart fill="currentColor" size={16} /></span>
-            <div>
-              <span className="card-kicker">PetSpace Plus</span>
-              <strong>Больше спокойствия для вас и питомца</strong>
-            </div>
-          </div>
-          <Link className="button secondary" to="/plus">Смотреть тарифы <ArrowUpRight size={16} /></Link>
-        </article>
       </section>
     </main>
   );

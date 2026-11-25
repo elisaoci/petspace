@@ -1,432 +1,189 @@
 # PetSpace
 
-Сайт для профиля питомца, календаря здоровья, локального ИИ-помощника и демо-подписки PetSpace Plus.
+PetSpace — веб-приложение для владельцев домашних животных. В одном месте можно вести профиль питомца, хранить медицинские записи, планировать события и делиться выбранными данными с ветеринарной клиникой.
 
-- Frontend: React 18 + TypeScript, Vite 5, React Router 6, Tailwind CSS — порт **5173**
-- Backend: FastAPI + SQLAlchemy 2.0 + Alembic — порт **8000**, API на `/api/v1`, Swagger на `/docs`
-- БД: PostgreSQL 16 — внутри compose `db:5432`, на хост публикуется как **5433** (`POSTGRES_PORT`)
-- Авторизация: вход по одноразовому коду на email, JWT access + refresh с ротацией
-- ИИ: Ollama на хосте (по умолчанию модель `qwen2.5:3b`), ответы стримятся по SSE
+> Проект находится в разработке. Каталог услуг, подписка Plus и отдельные интеграции пока работают в демонстрационном режиме. Медицинская информация, которую предоставляет ИИ, не заменяет консультацию ветеринарного врача.
 
-Страницы: `/` главная, `/login` вход и регистрация, `/reset-password` восстановление пароля,
-`/app` кабинет, `/app/pet`, `/app/calendar`, `/app/chat`, `/app/settings`, `/plus`, `/medical/:token`.
+## Возможности
 
-## Быстрый старт (Docker Compose)
+- **Кабинет и питомцы:** профиль владельца и анкеты питомцев с фотографией, породой, возрастом и весом.
+- **Календарь:** события и напоминания. Браузерные уведомления работают, пока приложение открыто и пользователь разрешил их показ; фоновых Web Push-уведомлений нет.
+- **Медицинская карта и Smart ID:** медицинские записи владельца, история изменений и временные ссылки доступа с выбранным сроком действия. Ссылку можно отозвать. Клиника, открывшая ссылку, может только просматривать данные — редактирование через ссылку не поддерживается.
+- **Услуги:** каталог с поиском, фильтрами и сортировкой. Карточки и цены демонстрационные; реальные бронирования и заявки не отправляются.
+- **Клиникам:** форма заявки на подключение подготовлена во frontend, но серверного API для заявок и документов пока нет; отправить заявку нельзя.
+- **ИИ-помощник:** ответы на вопросы о питомце. Ответы носят информационный характер.
+- **Plus:** демонстрационная страница подписки; подключённого платёжного провайдера нет.
+
+## Быстрый запуск через Docker
+
+Нужны Docker и Docker Compose. Из корня репозитория:
 
 ```bash
 cp .env.example .env
 docker compose -p petspace up -d --build
 ```
 
-Откройте http://localhost:5173 (Swagger — http://localhost:8000/docs), зарегистрируйтесь на вкладке
-«Регистрация» — аккаунт создаётся обычным путём и хранится в базе.
+После запуска откройте:
 
-Потом наполните аккаунт демо-данными (питомец «Макс» и два события календаря):
+- Приложение: <http://localhost:5173>
+- Проверка API: <http://localhost:8000/api/health>
+- Swagger UI: <http://localhost:8000/docs>
 
-```bash
-docker compose -p petspace exec backend python -m app.seed
-```
-
-Сидер **не создаёт пользователей и не знает паролей**: если в базе один аккаунт — данные достанутся
-ему, если несколько — укажите явно `python -m app.seed --email you@example.com`.
-
-Флаг `-d` обязателен, если вы не хотите держать терминал занятым: без него `Ctrl+C` останавливает контейнеры.
-
-Миграции Alembic применяются автоматически: в `docker-compose.yml` backend запускается командой
-`alembic upgrade head && uvicorn app.main:app ...` и ждёт healthcheck базы. Сидер заодно привязывает
-к аккаунту питомцев, оставшихся без владельца с ранних версий.
-
-**Код монтируется в контейнеры** (`./backend:/app`, `./frontend:/usr/src/app`), поэтому правки
-применяются сами: backend перезапускается `uvicorn --reload`, frontend — dev-сервером Vite.
-Пересобирать образы нужно только при изменении зависимостей (`requirements.txt`, `package.json`):
+Миграции базы данных применяются при старте backend. Зарегистрируйте аккаунт в приложении, затем при необходимости создайте демонстрационного питомца и события:
 
 ```bash
-docker compose -p petspace up -d --build
+docker compose -p petspace exec backend python -m app.seed --email you@example.com
 ```
 
-Проверка, что всё живо:
+Сидер не создаёт аккаунты: сначала зарегистрируйтесь. Если владельцев в базе несколько, укажите email нужного аккаунта. Сидер добавляет демонстрационные данные только если у этого владельца ещё нет питомца.
+
+Чтобы посмотреть логи:
 
 ```bash
-docker compose -p petspace ps
-curl http://localhost:8000/api/health   # {"status":"ok","database":"ok","ollama_model":"qwen2.5:3b"}
-curl http://localhost:5173/ -o /dev/null -w "%{http_code}\n"   # 200
+docker compose -p petspace logs -f backend
 ```
 
-Полезные команды:
+Остановить контейнеры, сохранив данные:
 
 ```bash
-docker compose -p petspace logs -f frontend     # логи
-docker compose -p petspace restart backend      # перезапуск
-docker compose -p petspace down                 # остановить (данные БД сохраняются в volume)
-docker compose -p petspace down -v              # остановить и удалить БД
-docker compose -p petspace exec backend alembic upgrade head   # вручную применить миграции
+docker compose -p petspace down
 ```
 
-Данные живут в именованных volumes: `postgres_data` (база) и `uploads_data` (фото питомцев и вложения,
-монтируется в `/app/uploads`). Обычный `down` их сохраняет, удаляет только `down -v`.
+Данные PostgreSQL и загруженные файлы хранятся в Docker volumes. Команда `docker compose -p petspace down -v` удалит volumes вместе с этими данными.
 
-## ИИ-помощник: Ollama на хосте
+### Порты и переменные Docker
 
-Ollama работает **на хосте, а не в контейнере** — модель крутится на вашем железе.
+При запуске с `.env.example` PostgreSQL доступен с хоста на порту `5433`; внутри сети Compose он доступен backend по адресу `db:5432`. Если не создавать `.env`, Compose использует порт `5432` по умолчанию. Frontend и API доступны на портах `5173` и `8000`.
+
+Основные параметры в корневом `.env`:
+
+| Переменная | Назначение |
+| --- | --- |
+| `POSTGRES_PORT` | Порт PostgreSQL на хосте. |
+| `OLLAMA_BASE_URL` | URL Ollama для backend. По умолчанию Docker Compose обращается к Ollama на хосте. |
+| `OLLAMA_MODEL` | Модель Ollama; по умолчанию `qwen2.5:3b`. |
+| `EXPOSE_DEV_OTP` | Показывать код подтверждения в ответе/логах в режиме разработки. Не включайте в production. |
+| `VITE_API_URL` | Адрес API для frontend; по умолчанию `http://localhost:8000/api/v1`. |
+
+Корневой `.env` используется Compose для подстановки переменных. Настройки приложения, которые Compose явно не передаёт, задаются в `backend/.env` или в окружении backend. Не используйте демонстрационные секреты из конфигурации для production.
+
+### ИИ-помощник и Ollama
+
+Для работы локального ИИ установите Ollama и скачайте модель, указанную в `OLLAMA_MODEL`, например:
 
 ```bash
-brew install ollama        # macOS; альтернатива — установщик с https://ollama.com/download
-ollama pull qwen2.5:3b     # ~2 ГБ, скачивается один раз
-curl http://localhost:11434/api/tags   # проверка, что сервер отвечает
+ollama pull qwen2.5:3b
 ```
 
-Сам сервер запускается одним из двух способов:
+Без доступной модели остальные основные разделы приложения можно использовать, но ИИ-помощник не сможет генерировать ответы.
+
+## Запуск frontend и backend отдельно
+
+Для разработки можно запустить PostgreSQL в Docker, а frontend и backend — локально. Нужны Node.js и Python 3.11.
+
+Сначала поднимите базу:
 
 ```bash
-brew services start ollama   # рекомендуется: работает в фоне и поднимается при входе в систему
-ollama serve                 # либо вручную, в отдельном терминале (умрёт вместе с терминалом)
+cp .env.example .env
+docker compose -p petspace up -d db
 ```
 
-Остановить фоновый сервис — `brew services stop ollama`, посмотреть состояние — `brew services list`.
-
-Адрес Ollama для backend задаётся переменной `OLLAMA_BASE_URL`:
-
-- Docker (по умолчанию в `docker-compose.yml`): `http://host.docker.internal:11434`
-- локальный backend без Docker: `http://localhost:11434`
-
-Модель переключается переменной `OLLAMA_MODEL`. Если Ollama не запущена, страницы работают,
-но в чате появится ошибка в SSE-потоке — это ожидаемое поведение.
-
-Проверить чат без браузера (первый ответ после простоя ждёт загрузки модели 5–30 с):
-
-```bash
-curl -N -X POST http://localhost:8000/api/chat/stream \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"Сколько корма давать ретриверу 32 кг?","conversation_id":"smoke","pet_id":1}'
-```
-
-В ответ придёт поток `data: {"content": "..."}` и завершающий `data: [DONE]`. Тестовую переписку
-можно удалить: `curl -X DELETE http://localhost:8000/api/chat/history/smoke`.
-
-## Локальный запуск без Docker
-
-Backend (нужна доступная PostgreSQL):
+Установите зависимости backend, примените миграции и запустите API:
 
 ```bash
 cd backend
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export DATABASE_URL=postgresql+psycopg://petspace:petspace@localhost:5433/petspace
-export OLLAMA_BASE_URL=http://localhost:11434
+export DATABASE_URL="postgresql+psycopg://petspace:petspace@localhost:5433/petspace"
 alembic upgrade head
-python -m app.seed
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8000
 ```
 
-Postgres проще всего поднять из того же compose: `docker compose -p petspace up -d db`.
-Порт `5433` — опубликованный порт контейнера (см. `POSTGRES_PORT` ниже); если 5432 у вас свободен,
-верните `5432`.
+Если изменён `POSTGRES_PORT`, укажите его фактическое значение в `DATABASE_URL`.
 
-Backend читает `.env` из **своей рабочей папки** (`env_file=".env"` в `app/config.py`), поэтому при
-запуске из `backend/` нужен `backend/.env`, либо переменные окружения, как выше.
-
-Frontend:
+В другом терминале запустите frontend:
 
 ```bash
 cd frontend
-npm install
-npm run dev        # http://localhost:5173
+npm ci
+npm run dev
 ```
 
-`VITE_API_URL` по умолчанию `http://localhost:8000/api` (см. `src/lib/api.ts`) — для локального
-запуска менять ничего не нужно.
+Frontend по умолчанию использует `http://localhost:8000/api/v1`. Чтобы указать другой API URL, задайте `VITE_API_URL` перед запуском Vite.
 
-## Тесты и линтер
+## Тесты и проверки
 
-Backend проверяется на настоящем PostgreSQL, но в отдельной базе `petspace_test`:
+### Backend
+
+Установите dev-зависимости в активированном виртуальном окружении:
 
 ```bash
-docker compose -p petspace up -d db
-docker compose -p petspace exec -T db psql -U petspace -d postgres -c 'CREATE DATABASE petspace_test'
-cd backend
-python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
-export TEST_DATABASE_URL=postgresql+psycopg://petspace:petspace@localhost:5433/petspace_test
-ruff check .
+```
+
+Тесты используют отдельную тестовую базу PostgreSQL. Создайте её один раз:
+
+```bash
+docker compose -p petspace exec -T db psql -U petspace -d postgres -c 'CREATE DATABASE petspace_test;'
+```
+
+В терминале, где активировано окружение backend, задайте отдельный URL и запустите проверки:
+
+```bash
+export TEST_DATABASE_URL="postgresql+psycopg://petspace:petspace@localhost:5433/petspace_test"
 pytest
+ruff check .
 ```
 
-Тесты покрывают CRUD питомцев, загрузку фото, вычисление `overdue`, публичную медкарту (в том числе
-что заметки владельца в неё не попадают и что перевыпуск токена ломает старую ссылку), деградацию
-чата при недоступной модели, а также авторизацию целиком: вход по коду, лимиты попыток, ротацию
-refresh-токенов, обнаружение повторного использования токена, требование согласий и изоляцию
-владельцев (чужой питомец, его события и чат недоступны). Frontend проверяется типами при сборке —
-`npm run build`.
+> Тестовая фикстура удаляет и заново создаёт таблицы перед тестами. Никогда не направляйте `TEST_DATABASE_URL` на базу разработки или production.
 
-## CI
-
-`.github/workflows/ci.yml` запускается на каждый push в `main` и на pull request:
-
-- **backend** — `ruff check` и `pytest` с сервисным PostgreSQL;
-- **frontend** — `npm ci` и `npm run build`;
-- **docker** — сборка обоих образов, запуск frontend-контейнера и проверка, что `/`, `/app` и `/plus`
-  отвечают 200. Это регрессия на два уже исправленных бага: `vite: Permission denied`
-  (node_modules с macOS в образе) и конфликт `WORKDIR /app` с маршрутом SPA `/app`.
-
-## Авторизация
-
-Два способа входа для владельца: **пароль** (основной) и **одноразовый код на email** (запасной,
-он же используется для восстановления пароля).
-
-1. **Регистрация** — `POST /api/v1/auth/register` с `{"email", "password", "consents"}`.
-   Пароль от 8 символов, согласия обязательны: без них аккаунт не создаётся (ответ `422`
-   `consent_required`). Повторная регистрация на тот же адрес — `409 email_taken`.
-   Актуальные версии согласий отдаёт `GET /api/v1/auth/consents/required`, поэтому фронтенд
-   не дублирует юридические тексты у себя.
-2. **Вход** — `POST /api/v1/auth/login` с `{"email", "password"}`. Ответ на неверный пароль и на
-   несуществующий email одинаковый, чтобы нельзя было перебрать адреса. После 5 неудачных попыток
-   аккаунт блокируется на 15 минут (`429` + `Retry-After`).
-3. **Вход по коду** — `POST /api/v1/auth/otp/request` (код из 6 цифр, 5 минут, не больше 3 запросов
-   в час) и `POST /api/v1/auth/otp/verify`. Код создаёт сессию только для существующего аккаунта:
-   регистрация здесь невозможна, неизвестный адрес получает `404 user_not_found`.
-4. **Смена пароля** — `POST /api/v1/auth/password` с `{"current_password", "new_password"}`.
-   Текущий пароль обязателен, если он уже задан (аккаунты, созданные до появления паролей, могут
-   сразу установить пароль). После смены отзываются **все** refresh-токены, поэтому чужие сессии
-   смену пароля не переживут; текущий клиент получает новую пару. Экран — `/app/settings`.
-5. **Восстановление пароля** — два шага: `POST /api/v1/auth/password/reset/request` с `{"email"}`
-   (всегда `202`, ответ не раскрывает, существует ли аккаунт) и
-   `POST /api/v1/auth/password/reset/confirm` с `{"email", "code", "new_password"}`.
-   Код сброса имеет отдельное назначение и не открывает сессию, а после сброса все сессии отзываются.
-   Экран — `/reset-password`.
-6. Дальше access-токен идёт в заголовке `Authorization: Bearer <token>`.
-
-Особенности реализации:
-
-- **Пароли.** PBKDF2-HMAC-SHA256, 600 000 итераций, случайная соль; в БД лежит
-  `pbkdf2_sha256$итерации$соль$хэш`, поэтому переход на Argon2id не потребует сброса паролей.
-- **Почты пока нет.** Провайдер не подключён: письмо печатается в лог backend
-  (`docker compose -p petspace logs -f backend`), а вне `ENVIRONMENT=prod` код дополнительно
-  возвращается полем `dev_code`. В prod этого поля не будет.
-- **Токены.** Access живёт 15 минут, refresh — 30 дней и одноразовый. Каждый `/auth/refresh` гасит
-  старый токен и выдаёт новый; повторное использование старого токена считается кражей и отзывает
-  все сессии (событие `auth.refresh.reuse_detected` в журнале).
-- **Хранение.** В БД только хэши: пароли — PBKDF2, refresh-токены — SHA-256, коды входа —
-  HMAC-SHA256 с секретом приложения.
-- **Согласия** хранятся с датой и версией текста. Создание питомца требует актуальных согласий,
-  иначе `403` с `consent_required`.
-- **Доступ к данным.** Любой запрос без токена — `401`. Чужой питомец, его события и история чата
-  возвращают `404` (а не `403`), чтобы нельзя было выяснить существование чужой карточки.
-- **Аудит.** В `audit_logs` попадают регистрация, входы и неудачные попытки, ротация и кража токенов,
-  обращения к публичной медкарте, удаление питомца и перевыпуск ссылки медкарты.
-- **Секретов в логах нет.** Пароли не печатаются нигде: ни в сидере, ни в логах, ни в ответах API.
-  Код входа отдаётся в ответе API лишь при `EXPOSE_DEV_OTP=true` (локальная разработка), а в prod
-  конфигурация с этим флагом просто не запустится.
-- **Шифрование медицинских данных.** Заметки владельца (аллергии, хронические болезни) и переписка
-  с ИИ шифруются на уровне приложения: AES-256-GCM, формат `enc:v1:<base64(nonce+ciphertext)>`.
-  Ключ — `MEDICAL_ENCRYPTION_KEY` (32 байта в base64), в prod обязателен; в dev выводится из
-  `JWT_SECRET`, чтобы локальный запуск работал без настройки. Старые записи открытым текстом
-  читаются как есть, а разово зашифровать их можно командой
-  `docker compose -p petspace exec backend python -m app.cli backfill-encryption`.
-  Пакет `cryptography` добавлен в `requirements.txt` — после обновления нужна пересборка backend:
-  `docker compose -p petspace up -d --build backend`.
-- **Роли.** `owner`, `clinic_admin`, `clinic_doctor`, `clinic_registrar`, `platform_admin`.
-  Проверка прав — зависимость `require_roles`; роль платформенного администратора выдаётся командой
-  `docker compose -p petspace exec backend python -m app.cli promote --email you@example.com`.
-  Админка: `GET /api/v1/admin/audit` и `GET /api/v1/admin/users` (только `platform_admin`).
-- **Смена версии согласий.** Если тексты обновились, при входе показывается экран с новыми версиями:
-  без подтверждения кабинет закрыт (проверка на фронтенде и `403 consent_required` на бэкенде).
-
-Пример через curl (регистрация нового аккаунта и запрос питомцев):
+### Frontend
 
 ```bash
-API=http://localhost:8000/api/v1
-ACCESS=$(curl -s -X POST $API/auth/register -H 'Content-Type: application/json' \
-  -d '{"email":"me@example.com","password":"strong-pass-1",
-       "consents":[{"kind":"terms","version":"2026-01-01"},
-                   {"kind":"privacy","version":"2026-01-01"}]}' \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
-curl -s -H "Authorization: Bearer $ACCESS" $API/pets
+cd frontend
+npm ci
+npm run build
 ```
 
-## Переменные окружения
+## Основные страницы и API
 
-| Переменная | Назначение | Значение по умолчанию |
-| --- | --- | --- |
-| `DATABASE_URL` | строка подключения SQLAlchemy | `postgresql+psycopg://petspace:petspace@localhost:5432/petspace` |
-| `POSTGRES_PORT` | порт Postgres **на хосте** (внутри compose всегда `db:5432`) | `5432`, в `.env.example` — `5433` |
-| `ENVIRONMENT` | `dev`, `staging` или `prod`; в prod запрещены небезопасные значения по умолчанию | `dev` |
-| `JWT_SECRET` | секрет для подписи токенов и HMAC кодов; в prod обязателен и не короче 32 символов | `dev-insecure-change-me` |
-| `ACCESS_TOKEN_TTL_MINUTES` | срок жизни access-токена | `15` |
-| `REFRESH_TOKEN_TTL_DAYS` | срок жизни refresh-токена | `30` |
-| `PASSWORD_ITERATIONS` | число итераций PBKDF2 | `600000` |
-| `LOGIN_MAX_ATTEMPTS` | неудачных входов до блокировки | `5` |
-| `LOGIN_LOCKOUT_MINUTES` | длительность блокировки | `15` |
-| `OTP_TTL_MINUTES` | срок жизни кода входа | `5` |
-| `OTP_MAX_ATTEMPTS` | попыток ввода одного кода | `5` |
-| `OTP_MAX_REQUESTS_PER_HOUR` | запросов кода на адрес в час | `3` |
-| `EMAIL_SENDER` | способ отправки писем; `console` пишет в лог | `console` |
-| `EXPOSE_DEV_OTP` | отдавать код входа в ответе API (только локальная разработка; в prod запрещено) | `false` |
-| `MEDICAL_ENCRYPTION_KEY` | ключ AES-256-GCM для заметок и чата, 32 байта в base64; в prod обязателен | в dev выводится из `JWT_SECRET` |
-| `OLLAMA_BASE_URL` | адрес Ollama | `http://localhost:11434` |
-| `OLLAMA_MODEL` | модель для чата | `qwen2.5:3b` |
-| `VITE_API_URL` | база API для фронтенда | `http://localhost:8000/api/v1` |
-| `UPLOAD_DIR` | папка загруженных фото | `uploads` |
+После входа доступны разделы кабинета:
 
-Почему на хосте `5433`: на 5432 часто уже слушает локальный Postgres/Postgres.app, и тогда
-подключение с хоста перехватывает он — появляется `FATAL: role "petspace" does not exist`, хотя в
-контейнере всё в порядке. Порт меняется одной строкой в `.env`, сеть контейнеров не затрагивается:
-backend всегда ходит на `db:5432`.
+| Страница | URL |
+| --- | --- |
+| Кабинет | `/app` |
+| Питомец | `/app/pet` |
+| Календарь | `/app/calendar` |
+| Услуги | `/app/services` |
+| Smart ID | `/app/smart-id` |
+| ИИ-помощник | `/app/chat` |
+| Plus | `/plus` |
 
-## API
+Ссылка на карту Smart ID для клиники открывается по адресу `/medical/access/:token`. API доступен под префиксом `/api/v1`; интерактивная документация — `/docs`. Основные API-группы включают авторизацию, профиль, питомцев, календарь, медицинские записи и доступ к Smart ID.
 
-| Метод | Путь | Что делает |
-| --- | --- | --- |
-| GET | `/api/health`, `/api/v1/health` | статус сервиса, БД и имя модели (без авторизации) |
-| POST | `/api/v1/auth/register` | регистрация: email, пароль, обязательные согласия |
-| POST | `/api/v1/auth/login` | вход по email и паролю |
-| POST | `/api/v1/auth/otp/request` | отправка кода входа на email |
-| POST | `/api/v1/auth/otp/verify` | вход по коду (только для существующего аккаунта) |
-| POST | `/api/v1/auth/password` | смена пароля (нужен текущий, отзывает другие сессии) |
-| POST | `/api/v1/auth/password/reset/request` | код для восстановления пароля |
-| POST | `/api/v1/auth/password/reset/confirm` | новый пароль по коду из письма |
-| POST | `/api/v1/auth/refresh` | ротация refresh-токена |
-| POST | `/api/v1/auth/logout` | отзыв refresh-токена |
-| GET | `/api/v1/auth/me` | текущий пользователь и статус согласий |
-| GET | `/api/v1/auth/consents/required` | актуальные версии текстов согласий |
-| POST | `/api/v1/auth/consents` | принять согласия отдельным запросом |
-| GET/POST | `/api/v1/pets` | список (только свои) и создание питомцев |
-| GET/PATCH/DELETE | `/api/v1/pets/{id}` | карточка питомца |
-| POST | `/api/v1/pets/{id}/photo` | загрузка фото (jpg, jpeg, png, webp) |
-| POST | `/api/v1/pets/{id}/medical-token` | перевыпуск секретной ссылки медкарты |
-| GET | `/api/v1/pets/public/medical-card/{token}` | публичная медкарта без заметок владельца (без авторизации) |
-| GET/POST | `/api/v1/events` | календарь (фильтр `?pet_id=`), у каждого события есть `computed_status` |
-| GET/PATCH/DELETE | `/api/v1/events/{id}` | редактирование события |
-| POST | `/api/v1/chat/stream` | SSE-поток ответа Ollama с контекстом питомца |
-| GET/DELETE | `/api/v1/chat/history/{conversation_id}` | история и очистка диалога |
-| POST | `/api/v1/payments/demo` | заглушка демо-оплаты: карта не обрабатывается и не сохраняется |
-| GET | `/api/v1/admin/audit` | журнал доступа к данным (только `platform_admin`) |
-| GET | `/api/v1/admin/users` | список пользователей (только `platform_admin`) |
+Для API-запросов, требующих входа, frontend использует токен авторизации. Публичная ссылка Smart ID позволяет клинике читать предоставленные владельцем данные в пределах срока и набора прав, заданных при создании ссылки.
 
-Всё, кроме `health` и публичной медкарты, требует заголовок `Authorization: Bearer <access_token>`.
+## Структура репозитория
 
-Статус `overdue` не хранится в БД, а вычисляется на лету: событие просрочено, если его `starts_at`
-в прошлом и статус не `done`/`cancelled` (`app/api/events.py`).
-
-## Соглашения API
-
-**Ошибки** приходят в едином формате:
-
-```json
-{"error": {"code": "not_found", "message": "Pet not found"}, "detail": "Pet not found"}
-```
-
-`code` — машинный идентификатор (`unauthorized`, `not_found`, `validation_error`,
-`consent_required`, `idempotency_conflict`, `too_many_requests`, `internal_error` и т.д.),
-`message` — текст для человека, `details` — контекст (список ошибок валидации, каких согласий
-не хватает). Поле `detail` дублирует сообщение для старых клиентов и будет удалено.
-
-**Пагинация** — `limit` (по умолчанию 50, максимум 200) и `offset`. Ответ остаётся массивом,
-а общее количество приходит в заголовке `X-Total-Count`:
-
-```bash
-curl -H "Authorization: Bearer $ACCESS" "$API/pets?limit=20&offset=40" -D -
-```
-
-**Идемпотентность** — заголовок `Idempotency-Key` на `POST /pets` и `POST /events`:
-повтор с тем же ключом и тем же телом вернёт сохранённый ответ с заголовком `Idempotent-Replay: true`,
-с другим телом — `409 idempotency_conflict`. Ключи живут 24 часа и привязаны к пользователю,
-поэтому ретрай из-за таймаута не создаёт дубль.
-
-```bash
-curl -X POST "$API/pets" -H "Authorization: Bearer $ACCESS" \
-  -H 'Content-Type: application/json' -H 'Idempotency-Key: create-pet-1' \
-  -d '{"name":"Бублик"}'
-```
-
-**Ограничение частоты** на уровне шлюза настраивается в [infra/nginx/petspace.conf](infra/nginx/petspace.conf):
-общий лимит на IP и отдельный строгий лимит на `/api/v1/auth/` (перебор паролей и кодов), плюс
-отдельная обработка SSE-потока чата без буферизации.
-
-## Возможности MVP
-
-- вход владельца по паролю и по коду, согласия с версиями текста, роли и журнал доступа к данным;
-- шифрование медицинских текстов (AES-256-GCM), единый формат ошибок, пагинация и идемпотентность записи;
-- профиль и несколько питомцев, фото, случайная публичная ссылка медкарты;
-- календарь прививок и обработок с вычисляемым статусом `overdue`;
-- SSE-чат с Ollama, персональным системным контекстом и очисткой истории;
-- локальная демонстрация уведомления на странице календаря (Web Notification API, нужно разрешение браузера);
-- демо-тарифы Plus: данные карт не отправляются и не сохраняются;
-- PWA: manifest с иконками (генератор — `frontend/scripts/generate-icons.py`) и service worker,
-  который кэширует только оболочку приложения. Запросы к `/api/` и `/uploads/` не кэшируются никогда:
-  это персональные данные. Регистрация service worker включается только в production-сборке —
-  в dev-режиме он ломает горячую перезагрузку.
-
-## Структура проекта
-
-```
-.github/workflows/  CI: линтер, тесты, сборка и проверка контейнеров
-infra/nginx/       конфигурация шлюза: TLS, ограничение частоты, SSE без буферизации
+```text
 backend/
-  app/api/          роутеры: auth, pets, events, chat, payments, admin, health;
-                    deps.py — доступ и роли, errors.py — единый формат ошибок, pagination.py
-  app/models/       модели: entities.py (питомцы, календарь, чат), auth.py (пользователи, OTP,
-                    токены, согласия, аудит), idempotency.py
-  app/services/     security, sessions, passwords, crypto (AES-256-GCM), consents, email, audit, idempotency
-  app/cli.py        promote (выдать platform_admin) и backfill-encryption
-  app/schemas/      Pydantic-схемы
-  app/services/     security (JWT/OTP), sessions (ротация токенов), consents, email, audit, демо-платежи
-  app/seed.py       сидер демо-данных
-  alembic/          миграции
-  tests/            pytest: API, авторизация, изоляция владельцев, публичная медкарта, чат
+  app/                 FastAPI-приложение, модели, API и сидер
+  alembic/             Миграции базы данных
+  tests/               Backend-тесты
 frontend/
-  public/           manifest, service worker, иконки PWA
-  scripts/          генератор иконок
-  src/pages/        HomePage, LoginPage, ResetPasswordPage, DashboardPage, PetPage,
-                    CalendarPage, ChatPage, SettingsPage, PlusPage, MedicalCardPage
-  src/components/   Layout, PetSwitcher, DogIllustration, RequireAuth
-  src/context/      AuthContext (сессия), PetContext (активный питомец)
-  src/lib/          api.ts (токены и автообновление), types.ts, format.ts, registerServiceWorker.ts
+  src/app/             Маршруты приложения
+  src/components/      Общие компоненты и панели
+  src/pages/           Страницы
+  src/lib/             API-клиент и frontend-логика
+docker-compose.yml     Сервисы разработки
+.env.example           Пример переменных Compose
 ```
 
-## Скриншоты
+## Примечания по текущему состоянию
 
-Основной dashboard содержит bento-сетку с приветствием, карточками прививки, веса, ИИ и Plus. В браузере можно проверить мобильный режим на ширинах 375/768/1024/1440/1920 px.
-
-## Если что-то не запускается
-
-**`sh: vite: Permission denied`, контейнер frontend выходит с кодом 126.**
-В образ попал `node_modules`, собранный на macOS (там бинарники `darwin-arm64` и нет флага `+x`),
-и `COPY . .` затёр linux-пакеты, установленные `npm install`. В проекте есть `frontend/.dockerignore`
-с `node_modules` — не удаляйте его и не переносите `node_modules` между системами. Лечение:
-
-```bash
-docker compose -p petspace up -d --build frontend
-```
-
-**Страница `/app` отдаёт 500, в логах `EISDIR: illegal operation on a directory, read /app`.**
-Рабочая папка контейнера совпала с маршрутом SPA. В `frontend/Dockerfile` должно быть
-`WORKDIR /usr/src/app` (не `/app`).
-
-**В кабинете нет питомцев.** Не выполнен сидер:
-`docker compose -p petspace exec backend python -m app.seed` (нужен уже зарегистрированный аккаунт).
-
-**Сидер пишет «В базе нет пользователей».** Это нормально: сидер не создаёт аккаунты. Зарегистрируйтесь
-на `/login` и запустите его снова; если аккаунтов несколько — укажите `--email you@example.com`.
-
-**Кабинет просит войти или API отвечает 401.** Это ожидаемо: без токена доступ закрыт.
-Войдите на `/login` своим email и паролем.
-
-**Пароль не подходит.** Восстановите его на `/reset-password` по коду из письма или войдите
-по коду с почты. После смены пароля все прежние сессии завершаются — на других устройствах
-придётся войти заново.
-
-**Код входа не приходит на почту.** Почтовый провайдер ещё не подключён: `EMAIL_SENDER=console`
-печатает письмо в лог backend, а при `EXPOSE_DEV_OTP=true` код дополнительно виден на экране входа.
-
-**Чат отвечает ошибкой или молчит.** Проверьте `ollama pull qwen2.5:3b`,
-`curl http://localhost:11434/api/tags` и `brew services list` (там `ollama` должен быть `started`);
-из контейнера адрес должен быть `host.docker.internal:11434`.
-
-**Порты заняты.** 5173/8000 меняются в `docker-compose.yml`, порт БД — переменной `POSTGRES_PORT`
-в `.env`. Занявший процесс ищется так: `lsof -i :5173`.
-
-**`FATAL: role "petspace" does not exist` при запуске backend на хосте.** Вы попали в локальный
-Postgres на 5432, а не в контейнерный: используйте `localhost:5433` (`POSTGRES_PORT`).
-
-**Таблиц нет / ошибки миграций.** `docker compose -p petspace exec backend alembic upgrade head`.
+- Локальный режим разработки настроен для PostgreSQL и Python 3.11; Docker Compose поднимает PostgreSQL, backend и frontend.
+- Почтовый провайдер не подключён: код подтверждения в режиме разработки выводится в лог backend и, при `EXPOSE_DEV_OTP=true`, возвращается API.
+- Уведомления календаря не доставляются, когда приложение закрыто или браузер не разрешил уведомления.
+- Ссылки Smart ID предназначены для просмотра; клиника не может менять медицинскую карту через предоставленную ссылку.
+- Каталог услуг и Plus не подключены к реальному бронированию или оплате. У формы клиники пока нет серверного API.

@@ -2,7 +2,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { RequireAuth } from "../components/RequireAuth";
 import { CalendarPage } from "../pages/CalendarPage";
+import { AccessCardPage } from "../pages/AccessCardPage";
 import { ChatPage } from "../pages/ChatPage";
+import { ClinicsPage } from "../pages/ClinicsPage";
 import { DashboardPage } from "../pages/DashboardPage";
 import { HomePage } from "../pages/HomePage";
 import { LoginPage } from "../pages/LoginPage";
@@ -11,6 +13,8 @@ import { NotFoundPage } from "../pages/NotFoundPage";
 import { PetPage } from "../pages/PetPage";
 import { PlusPage } from "../pages/PlusPage";
 import { ResetPasswordPage } from "../pages/ResetPasswordPage";
+import { ServicesPage } from "../pages/ServicesPage";
+import { SmartIdPage } from "../pages/SmartIdPage";
 import { SettingsPage } from "../pages/SettingsPage";
 
 export function App() {
@@ -19,16 +23,20 @@ export function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/clinics" element={<ClinicsPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         {/* Кабинет доступен только вошедшему владельцу. */}
         <Route path="/app" element={<RequireAuth><DashboardPage /></RequireAuth>} />
         <Route path="/app/pet" element={<RequireAuth><PetPage /></RequireAuth>} />
         <Route path="/app/calendar" element={<RequireAuth><CalendarPage /></RequireAuth>} />
+        <Route path="/app/services" element={<RequireAuth><ServicesPage /></RequireAuth>} />
+        <Route path="/app/smart-id" element={<RequireAuth><SmartIdPage /></RequireAuth>} />
         <Route path="/app/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
         <Route path="/app/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
         <Route path="/plus" element={<RequireAuth><PlusPage /></RequireAuth>} />
         <Route path="/profile" element={<Navigate to="/plus" replace />} />
         <Route path="/medical/:token" element={<MedicalCardPage />} />
+        <Route path="/medical/access/:token" element={<AccessCardPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

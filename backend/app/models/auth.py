@@ -41,6 +41,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    full_name: Mapped[str | None] = mapped_column(String(255))
     email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
     role: Mapped[str] = mapped_column(String(32), nullable=False, default=ROLE_OWNER)

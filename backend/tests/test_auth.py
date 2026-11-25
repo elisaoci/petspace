@@ -33,6 +33,29 @@ def test_register_creates_user_with_password_and_tokens(client: TestClient) -> N
     assert body["user"]["has_password"] is True
 
 
+def test_full_name_is_saved_and_can_be_updated(client: TestClient) -> None:
+    registered = client.post(
+        f"{API_V1}/auth/register",
+        json={
+            "full_name": "  Мария   Иванова  ",
+            "email": EMAIL,
+            "password": DEFAULT_PASSWORD,
+            "consents": consents_payload(),
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    tokens = registered.json()
+    assert tokens["user"]["full_name"] == "Мария Иванова"
+
+    updated = client.patch(
+        f"{API_V1}/auth/profile",
+        headers={"Authorization": f"Bearer {tokens['access_token']}"},
+        json={"full_name": "Мария Петрова"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["full_name"] == "Мария Петрова"
+
+
 def test_register_requires_all_consents(client: TestClient) -> None:
     without_consents = client.post(
         f"{API_V1}/auth/register",

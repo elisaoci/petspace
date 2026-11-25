@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check } from "lucide-react";
+import { Check, HeartPulse, Link2, Sparkles } from "lucide-react";
 import { PetSwitcher } from "../components/PetSwitcher";
 import { api } from "../lib/api";
 
@@ -30,49 +30,55 @@ export function PlusPage() {
         </div>
         <PetSwitcher />
       </div>
-      <p className="lead">Демо-оплата: номер карты не вводится и не сохраняется. Это визуализация тарифов, не настоящий платёж.</p>
-      <div className="plans">
-        <section className="card plan-card">
-          <span className="card-kicker">Помощь рядом</span>
+      <p className="lead">Дополнительные инструменты для заботы о питомце.</p>
+
+      <section className="plus-benefits" aria-label="Преимущества Plus">
+        <article className="card plus-benefit-card">
+          <span className="icon-box lavender"><Sparkles size={20} /></span>
+          <span className="card-kicker">Здоровье и уход</span>
+          <h2>ИИ-помощник</h2>
+          <p>Задавайте вопросы об уходе и питании питомца и получайте ответы с учётом его профиля.</p>
+          <span className="benefit-access"><Check size={15} /> Доступен в текущем демо</span>
+        </article>
+        <article className="card plus-benefit-card">
+          <span className="icon-box lavender"><Link2 size={20} /></span>
+          <span className="card-kicker">Для визита к ветеринару</span>
+          <h2>Медкарта по ссылке</h2>
+          <p>Поделитесь основными данными и вакцинациями. Ссылка открывает карту только для просмотра.</p>
+          <span className="benefit-access"><Check size={15} /> Ссылка доступна в профиле питомца</span>
+        </article>
+      </section>
+
+      <section className="plus-plans" aria-label="Условия подписки">
+        <article className="card plan-card">
+          <span className="card-kicker">Демо-тариф</span>
           <h2>Месяц</h2>
           <strong className="plan-price">199 ₽ <small>/ мес</small></strong>
           <ul className="plan-list">
-            <li>Календарь и напоминания</li>
-            <li>Профиль и медкарта</li>
+            <li>Профиль и календарь</li>
             <li>ИИ-помощник</li>
+            <li>Медкарта по ссылке</li>
           </ul>
-          <button className="button secondary full-button" type="button" onClick={() => activate("monthly", 199)}>Выбрать месяц</button>
-        </section>
-        <section className="card plan-card featured">
-          <span className="plan-badge">Выгоднее</span>
-          <span className="card-kicker">Лучший выбор</span>
+          <button className="button secondary full-button" type="button" onClick={() => activate("monthly", 199)}>
+            Выбрать месяц
+          </button>
+        </article>
+        <article className="card plan-card featured">
+          <span className="card-kicker">Демо-тариф</span>
           <h2>Год</h2>
           <strong className="plan-price">1 490 ₽ <small>/ год</small></strong>
           <ul className="plan-list">
-            <li>Всё из месячного тарифа</li>
-            <li>Приоритетная поддержка в демо</li>
-            <li>Два месяца в подарок</li>
+            <li>Все возможности месяца</li>
+            <li>Экономия при оплате за год</li>
+            <li>Оплата доступна в демо-режиме</li>
           </ul>
           <button className="button primary full-button" type="button" onClick={() => activate("yearly", 1490)}>
             {paid ? <><Check size={16} /> Plus активен</> : "Подключить Plus"}
           </button>
-        </section>
-      </div>
-      {error && <p className="form-error" role="alert">{error}</p>}
-      <section className="card payment-card">
-        <div className="card-heading">
-          <div>
-            <span className="card-kicker">Демо-оплата</span>
-            <h3>Безопасная визуализация карты</h3>
-          </div>
-          <span className="demo-badge">ДАННЫЕ НЕ СОХРАНЯЮТСЯ</span>
-        </div>
-        <div className="fake-card">
-          <span>PetSpace Plus</span>
-          <strong>••••  ••••  ••••  4242</strong>
-          <small>Тестовая карта</small>
-        </div>
+        </article>
       </section>
+      <p className="plus-demo-note"><HeartPulse size={15} /> Демо-оплата не списывает деньги и не сохраняет платёжные данные.</p>
+      {error && <p className="form-error" role="alert">{error}</p>}
     </main>
   );
 }

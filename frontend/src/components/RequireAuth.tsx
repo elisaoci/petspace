@@ -27,5 +27,9 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return <ConsentGate />;
   }
 
+  if (user.role !== "owner") {
+    return <Navigate to="/clinics" replace />;
+  }
+
   return <>{children}</>;
 }
